@@ -1,7 +1,7 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → added Notifications system (Window:Notify / Window:Notification)
+-- v4 → notifications: bottom-right position + stack-upwards animation
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
--- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
+-- Notification API: Window:Notify(title, text, duration, type) and Window:Notification(opts)
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -82,7 +82,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = { -- alias / single entry for synapse-like palette
+    ["Synapse"] = {
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -111,8 +111,9 @@ local function ensureNotificationGui()
 
     local holder = Instance.new("Frame")
     holder.Name = "_holder"
-    holder.AnchorPoint = Vector2.new(1, 0)
-    holder.Position = UDim2.new(1, -12, 0, 12)
+    -- bottom-right anchoring
+    holder.AnchorPoint = Vector2.new(1, 1)
+    holder.Position = UDim2.new(1, -12, 1, -12)
     holder.Size = UDim2.new(0, 320, 0, 0)
     holder.BackgroundTransparency = 1
     holder.Parent = gui
@@ -121,6 +122,7 @@ local function ensureNotificationGui()
     layout.FillDirection = Enum.FillDirection.Vertical
     layout.SortOrder = Enum.SortOrder.LayoutOrder
     layout.Padding = UDim.new(0, 8)
+    layout.VerticalAlignment = Enum.VerticalAlignment.Bottom -- stack upward from bottom
     layout.Parent = holder
 
     return gui
@@ -1158,15 +1160,13 @@ function Kour6anHub.CreateLib(title, themeName)
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
 
-            -- === Notification API on Window (exposed below) ===
-
             return SectionObj
         end
 
         return TabObj
     end
 
-    -- === Notification API implementation on Window ===
+    -- === Notification API implementation on Window (bottom-right stacking) ===
     -- Window:Notify(title, text, durationSeconds, type)
     function Window:Notify(title, text, duration, kind)
         duration = (type(duration) == "number" and duration) or 4
@@ -1174,18 +1174,26 @@ function Kour6anHub.CreateLib(title, themeName)
         local kindKey = tostring(kind):lower()
         if not notifTypeColor[kindKey] then kindKey = "info" end
 
-        -- create holder if missing
+        -- ensure holder exists
         NotifGui = ensureNotificationGui()
         NotifHolder = NotifGui:FindFirstChild("_holder")
 
-        -- notification frame
+        -- notification frame (start collapsed height for grow animation)
         local notif = Instance.new("Frame")
         notif.Name = "notification"
-        notif.Size = UDim2.new(0, 320, 0, 64)
+        notif.Size = UDim2.new(0, 320, 0, 0) -- start closed
         notif.BackgroundColor3 = theme.SectionBackground
         notif.BorderSizePixel = 0
         notif.Parent = NotifHolder
-        notif.LayoutOrder = #NotifHolder:GetChildren() + 1
+
+        -- set a LayoutOrder so items append naturally
+        local childCount = 0
+        for _,c in ipairs(NotifHolder:GetChildren()) do
+            if c:IsA("Frame") and c.Name == "notification" then
+                childCount = childCount + 1
+            end
+        end
+        notif.LayoutOrder = childCount + 1
 
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 8)
@@ -1241,11 +1249,8 @@ function Kour6anHub.CreateLib(title, themeName)
         closeBtn.TextColor3 = theme.SubText
         closeBtn.Parent = notif
 
-        -- initial entry animation: spawn off to the right and slide in
-        notif.Position = UDim2.new(1, 340, 0, 12 + (#NotifHolder:GetChildren()-1) * (64 + 8))
-        tween(notif, {Position = UDim2.new(1, -12, 0, 12 + (#NotifHolder:GetChildren()-1) * (64 + 8))}, 0.18)
-
-        -- fade-in text
+        -- entry animation: grow height from 0 -> 64
+        tween(notif, {Size = UDim2.new(0, 320, 0, 64)}, 0.18)
         titleLbl.TextTransparency = 1
         bodyLbl.TextTransparency = 1
         tween(titleLbl, {TextTransparency = 0}, 0.18)
@@ -1255,11 +1260,11 @@ function Kour6anHub.CreateLib(title, themeName)
         local function closeNow()
             if closed then return end
             closed = true
-            -- slide out & fade then destroy
-            tween(notif, {Position = UDim2.new(1, 340, 0, notif.Position.Y.Offset)}, 0.15)
+            -- shrink away
             tween(titleLbl, {TextTransparency = 1}, 0.12)
             tween(bodyLbl, {TextTransparency = 1}, 0.12)
-            task.delay(0.15, function()
+            tween(notif, {Size = UDim2.new(0, 320, 0, 0)}, 0.15)
+            task.delay(0.16, function()
                 if notif and notif.Parent then
                     notif:Destroy()
                 end
