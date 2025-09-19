@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API)
--- v4 → added: Dropdown, Colorpicker, Label, Separator + existing Slider/Textbox/Keybind
+-- v4 → dropdown embedded, theme switching (SetTheme), added Midnight theme
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 
 local Kour6anHub = {}
@@ -47,12 +47,12 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (light tweaked to avoid invisibility)
+-- Themes (Light tweaked slightly for contrast, added Midnight)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        SectionBackground = Color3.fromRGB(250,250,250),
+        SectionBackground = Color3.fromRGB(250,250,250), -- slightly off-white for contrast
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
         Accent = Color3.fromRGB(0,120,255)
@@ -64,6 +64,14 @@ local Themes = {
         Text = Color3.fromRGB(230,230,230),
         SubText = Color3.fromRGB(180,180,180),
         Accent = Color3.fromRGB(0,120,255)
+    },
+    ["Midnight"] = {
+        Background = Color3.fromRGB(10,12,20),
+        TabBackground = Color3.fromRGB(18,20,30),
+        SectionBackground = Color3.fromRGB(22,24,36),
+        Text = Color3.fromRGB(235,235,245),
+        SubText = Color3.fromRGB(150,150,170),
+        Accent = Color3.fromRGB(120,90,255) -- purple-ish accent
     }
 }
 
@@ -150,6 +158,56 @@ function Kour6anHub.CreateLib(title, themeName)
     Window.ScreenGui = ScreenGui
     Window.Main = Main
 
+    -- runtime theme switcher
+    function Window:SetTheme(newThemeName)
+        local newTheme = Themes[newThemeName]
+        if not newTheme then return end
+        theme = newTheme
+
+        -- core elements
+        Main.BackgroundColor3 = theme.Background
+        Topbar.BackgroundColor3 = theme.SectionBackground
+        Title.TextColor3 = theme.Text
+        TabContainer.BackgroundColor3 = theme.TabBackground
+
+        -- update tabs & content descendants
+        for _, entry in ipairs(Tabs) do
+            local btn = entry.Button
+            local frame = entry.Frame
+            -- tab button
+            local active = btn:GetAttribute("active")
+            btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
+            btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
+            -- tab frame and its children
+            frame.BackgroundTransparency = 1
+            for _, child in ipairs(frame:GetDescendants()) do
+                if child:IsA("Frame") then
+                    if child.Name == "_section" then
+                        child.BackgroundColor3 = theme.SectionBackground
+                    end
+                elseif child:IsA("TextLabel") then
+                    -- labels (section titles, etc.)
+                    child.TextColor3 = theme.SubText
+                elseif child:IsA("TextButton") then
+                    -- controls: keep toggle/Button text visible
+                    child.TextColor3 = theme.Text
+                    -- Only change background for generic controls that aren't active toggles
+                    if not child:GetAttribute("_isToggleState") then
+                        child.BackgroundColor3 = theme.Background
+                    else
+                        -- if toggle, update background based on stored attribute if present
+                        local tog = child:GetAttribute("_toggle")
+                        child.BackgroundColor3 = tog and theme.Accent or theme.Background
+                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
+                    end
+                elseif child:IsA("TextBox") then
+                    child.BackgroundColor3 = theme.SectionBackground
+                    child.TextColor3 = theme.Text
+                end
+            end
+        end
+    end
+
     function Window:NewTab(tabName)
         -- Tab button
         local TabButton = Instance.new("TextButton")
@@ -225,6 +283,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
+        -- Tab API
         local TabObj = {}
 
         function TabObj:NewSection(sectionName)
@@ -297,7 +356,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 local Btn = Instance.new("TextButton")
                 Btn.Text = text
                 Btn.Size = UDim2.new(1, 0, 0, 34)
-                Btn.BackgroundColor3 = theme.Background
+                Btn.BackgroundColor3 = theme.SectionBackground -- use section background so contrast exists in LightTheme
                 Btn.TextColor3 = theme.Text
                 Btn.Font = Enum.Font.Gotham
                 Btn.TextSize = 14
@@ -312,13 +371,13 @@ function Kour6anHub.CreateLib(title, themeName)
                     tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
                 Btn.MouseLeave:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
+                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
                 end)
 
                 Btn.MouseButton1Click:Connect(function()
                     tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
                     task.wait(0.09)
-                    tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, 0, 0, 34)}, 0.12)
+                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.12)
                     pcall(function() callback() end)
                 end)
 
@@ -329,7 +388,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 local ToggleBtn = Instance.new("TextButton")
                 ToggleBtn.Text = text .. " [OFF]"
                 ToggleBtn.Size = UDim2.new(1, 0, 0, 34)
-                ToggleBtn.BackgroundColor3 = theme.Background
+                ToggleBtn.BackgroundColor3 = theme.SectionBackground
                 ToggleBtn.TextColor3 = theme.Text
                 ToggleBtn.Font = Enum.Font.Gotham
                 ToggleBtn.TextSize = 14
@@ -341,12 +400,14 @@ function Kour6anHub.CreateLib(title, themeName)
                 ToggleCorner.Parent = ToggleBtn
 
                 local state = false
+                ToggleBtn:SetAttribute("_isToggleState", true)
+                ToggleBtn:SetAttribute("_toggle", state)
 
                 ToggleBtn.MouseEnter:Connect(function()
                     tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
                 ToggleBtn.MouseLeave:Connect(function()
-                    local bg = state and theme.Accent or theme.Background
+                    local bg = state and theme.Accent or theme.SectionBackground
                     tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
                 end)
 
@@ -360,9 +421,10 @@ function Kour6anHub.CreateLib(title, themeName)
                         ToggleBtn.BackgroundColor3 = theme.Accent
                         ToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
                     else
-                        ToggleBtn.BackgroundColor3 = theme.Background
+                        ToggleBtn.BackgroundColor3 = theme.SectionBackground
                         ToggleBtn.TextColor3 = theme.Text
                     end
+                    ToggleBtn:SetAttribute("_toggle", state)
                     pcall(function() callback(state) end)
                 end)
 
@@ -372,8 +434,9 @@ function Kour6anHub.CreateLib(title, themeName)
                     SetState = function(v)
                         state = not not v
                         ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
-                        ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.Background
+                        ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
                         ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
+                        ToggleBtn:SetAttribute("_toggle", state)
                     end
                 }
             end
@@ -568,10 +631,12 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- NewDropdown(name, optionsTable, callback)
+            -- Embedded Dropdown (options appear below the button inside the Section)
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
                 local current = options[1] or nil
+                local open = false
+                local optionsFrame = nil
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -592,45 +657,42 @@ function Kour6anHub.CreateLib(title, themeName)
                 btnCorner.CornerRadius = UDim.new(0, 6)
                 btnCorner.Parent = btn
 
-                local open = false
-                local popup -- will be Frame parented to ScreenGui
-
-                local function closePopup()
-                    if popup and popup.Parent then
-                        popup:Destroy()
+                local function closeOptions()
+                    if optionsFrame and optionsFrame.Parent then
+                        optionsFrame:Destroy()
                     end
-                    popup = nil
+                    optionsFrame = nil
                     open = false
                 end
 
-                local function openPopup()
-                    closePopup()
+                local function openOptions()
+                    closeOptions()
                     open = true
-                    popup = Instance.new("Frame")
-                    popup.Size = UDim2.new(0, 180, 0, math.max(30, #options * 28))
-                    popup.BackgroundColor3 = theme.SectionBackground
-                    popup.BorderSizePixel = 0
-                    popup.Parent = ScreenGui
-                    local pc = Instance.new("UICorner", popup)
-                    pc.CornerRadius = UDim.new(0, 6)
+                    optionsFrame = Instance.new("Frame")
+                    optionsFrame.Name = "_dropdownOptions"
+                    optionsFrame.BackgroundColor3 = theme.SectionBackground
+                    optionsFrame.BorderSizePixel = 0
+                    optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, #options * 28))
+                    optionsFrame.AnchorPoint = Vector2.new(0,0)
+                    optionsFrame.Parent = Section
 
-                    -- position near the button
-                    local abs = wrap.AbsolutePosition
-                    popup.Position = UDim2.new(0, abs.X + 160, 0, abs.Y) -- place to right of tabs area
-                    -- content
+                    local corner = Instance.new("UICorner")
+                    corner.CornerRadius = UDim.new(0, 6)
+                    corner.Parent = optionsFrame
+
                     local list = Instance.new("ScrollingFrame")
-                    list.Parent = popup
+                    list.BackgroundTransparency = 1
                     list.Size = UDim2.new(1, 0, 1, 0)
                     list.CanvasSize = UDim2.new(0, 0, 0, 0)
                     list.ScrollBarThickness = 6
-                    list.BackgroundTransparency = 1
+                    list.Parent = optionsFrame
 
                     local layout = Instance.new("UIListLayout")
-                    layout.Parent = list
                     layout.SortOrder = Enum.SortOrder.LayoutOrder
                     layout.Padding = UDim.new(0, 4)
+                    layout.Parent = list
 
-                    -- Add option buttons
+                    -- add options
                     for i, opt in ipairs(options) do
                         local optBtn = Instance.new("TextButton")
                         optBtn.Size = UDim2.new(1, -8, 0, 24)
@@ -657,31 +719,24 @@ function Kour6anHub.CreateLib(title, themeName)
                             current = opt
                             btn.Text = (name and name .. ": " or "") .. tostring(current)
                             pcall(function() callback(current) end)
-                            closePopup()
+                            closeOptions()
                         end)
                     end
 
-                    -- close if click outside
-                    local conn
-                    conn = UserInputService.InputBegan:Connect(function(input, gp)
-                        if gp then return end
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                            local mp = input.Position
-                            local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
-                            local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
-                            if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
-                                conn:Disconnect()
-                                closePopup()
-                            end
-                        end
+                    -- adjust size based on content (if layout already has content)
+                    spawn(function()
+                        task.wait(0.03)
+                        local s = layout.AbsoluteContentSize
+                        optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, s.Y + 8))
+                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
                     end)
                 end
 
                 btn.MouseButton1Click:Connect(function()
                     if open then
-                        closePopup()
+                        closeOptions()
                     else
-                        openPopup()
+                        openOptions()
                     end
                 end)
 
@@ -697,11 +752,15 @@ function Kour6anHub.CreateLib(title, themeName)
                         options = newOptions or {}
                         current = options[1] or nil
                         btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
+                        if optionsFrame then
+                            optionsFrame:Destroy()
+                            optionsFrame = nil
+                            open = false
+                        end
                     end
                 }
             end
 
-            -- NewColorpicker(name, defaultColor, callback)
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
                 local cur = defaultColor
@@ -730,6 +789,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 pc.CornerRadius = UDim.new(0, 6)
                 pc.Parent = preview
 
+                -- popup implementation (keeps original floating style to the right of sections)
                 local popup = nil
                 local open = false
 
@@ -852,7 +912,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     local pc2 = Instance.new("UICorner", previewBox)
                     pc2.CornerRadius = UDim.new(0, 6)
 
-                    -- initial rgb
                     local r,g,b = cur.R, cur.G, cur.B
 
                     local rSlider = createSlider(popup, 34, "R", r, function(rel)
@@ -874,7 +933,6 @@ function Kour6anHub.CreateLib(title, themeName)
                         pcall(function() callback(cur) end)
                     end)
 
-                    -- close on outside click
                     local conn
                     conn = UserInputService.InputBegan:Connect(function(input, gp)
                         if gp then return end
@@ -895,7 +953,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     Get = function() return cur end,
                     Set = function(c)
                         if type(c) == "table" then
-                            -- accept {r,g,b} or {R=..,G=..,B=..}
                             local ok = pcall(function()
                                 cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
                             end)
@@ -914,6 +971,9 @@ function Kour6anHub.CreateLib(title, themeName)
 
         return TabObj
     end
+
+    -- apply initial theme (ensures proper contrast)
+    Window:SetTheme(themeName or "LightTheme")
 
     return Window
 end
