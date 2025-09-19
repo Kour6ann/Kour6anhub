@@ -1,5 +1,6 @@
 -- Kour6anHub UI Library (Kavo-compatible API)
 -- v4 → patched: tab padding, spacing, alignment, scrolling autosize, returns for controls
+-- Added: NewSlider, NewTextbox, NewKeybind
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -352,6 +353,208 @@ function Kour6anHub.CreateLib(title, themeName)
                         ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.Background
                         ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
                     end
+                }
+            end
+
+            -- NewSlider(text, min, max, default, callback)
+            function SectionObj:NewSlider(text, min, max, default, callback)
+                min = min or 0
+                max = max or 100
+                default = default or min
+
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 48)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
+
+                local lbl = Instance.new("TextLabel")
+                lbl.Text = text
+                lbl.Size = UDim2.new(1, -8, 0, 18)
+                lbl.Position = UDim2.new(0, 0, 0, 0)
+                lbl.BackgroundTransparency = 1
+                lbl.TextColor3 = theme.SubText
+                lbl.Font = Enum.Font.Gotham
+                lbl.TextSize = 13
+                lbl.TextXAlignment = Enum.TextXAlignment.Left
+                lbl.Parent = wrap
+
+                local bar = Instance.new("Frame")
+                bar.Size = UDim2.new(1, -8, 0, 18)
+                bar.Position = UDim2.new(0, 0, 0, 24)
+                bar.BackgroundColor3 = theme.SectionBackground
+                bar.Parent = wrap
+
+                local barCorner = Instance.new("UICorner")
+                barCorner.CornerRadius = UDim.new(0, 8)
+                barCorner.Parent = bar
+
+                local fill = Instance.new("Frame")
+                local initialRel = 0
+                if max > min then
+                    initialRel = (default - min) / (max - min)
+                end
+                fill.Size = UDim2.new(initialRel, 0, 1, 0)
+                fill.BackgroundColor3 = theme.Accent
+                fill.Parent = bar
+
+                local fillCorner = Instance.new("UICorner")
+                fillCorner.CornerRadius = UDim.new(0, 8)
+                fillCorner.Parent = fill
+
+                local knob = Instance.new("Frame")
+                knob.Size = UDim2.new(0, 14, 0, 14)
+                knob.Position = UDim2.new(fill.Size.X.Scale, -7, 0.5, -7)
+                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                knob.Parent = bar
+                local knobCorner = Instance.new("UICorner")
+                knobCorner.CornerRadius = UDim.new(0, 8)
+                knobCorner.Parent = knob
+
+                local dragging = false
+
+                local function updateByX(x)
+                    local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                    fill.Size = UDim2.new(rel, 0, 1, 0)
+                    knob.Position = UDim2.new(rel, -7, 0.5, -7)
+                    local val = min + (max - min) * rel
+                    pcall(function() callback(val) end)
+                end
+
+                bar.InputBegan:Connect(function(inp)
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = true
+                        updateByX(inp.Position.X)
+                    end
+                end)
+                bar.InputEnded:Connect(function(inp)
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                        dragging = false
+                    end
+                end)
+                UserInputService.InputChanged:Connect(function(inp)
+                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+                        updateByX(inp.Position.X)
+                    end
+                end)
+
+                -- Return handle with Set/Get
+                return {
+                    Set = function(v)
+                        local rel = 0
+                        if max > min then
+                            rel = math.clamp((v - min) / (max - min), 0, 1)
+                        end
+                        fill.Size = UDim2.new(rel, 0, 1, 0)
+                        knob.Position = UDim2.new(rel, -7, 0.5, -7)
+                        pcall(function() callback(min + (max - min) * rel) end)
+                    end,
+                    Get = function()
+                        return min + (max - min) * fill.Size.X.Scale
+                    end
+                }
+            end
+
+            -- NewTextbox(placeholder, defaultText, callbackOnEnter)
+            function SectionObj:NewTextbox(placeholder, defaultText, callback)
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
+
+                local box = Instance.new("TextBox")
+                box.Size = UDim2.new(1, 0, 1, 0)
+                box.BackgroundColor3 = theme.SectionBackground
+                box.TextColor3 = theme.Text
+                box.ClearTextOnFocus = false
+                box.Text = defaultText or ""
+                box.PlaceholderText = placeholder or ""
+                box.Font = Enum.Font.Gotham
+                box.TextSize = 14
+                box.Parent = wrap
+
+                local boxCorner = Instance.new("UICorner")
+                boxCorner.CornerRadius = UDim.new(0, 6)
+                boxCorner.Parent = box
+
+                box.FocusLost:Connect(function(enterPressed)
+                    if enterPressed and callback then
+                        pcall(function() callback(box.Text) end)
+                    end
+                end)
+
+                -- Return handle with Get/Set and Focus
+                return {
+                    TextBox = box,
+                    Get = function() return box.Text end,
+                    Set = function(v) box.Text = tostring(v) end,
+                    Focus = function() box:CaptureFocus() end
+                }
+            end
+
+            -- NewKeybind(description, defaultKeyEnum, callbackOnPress)
+            function SectionObj:NewKeybind(desc, defaultKey, callback)
+                -- defaultKey expected as Enum.KeyCode or nil
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
+
+                local btn = Instance.new("TextButton")
+                local curKey = defaultKey and (tostring(defaultKey):gsub("^Enum.KeyCode%.","")) or "None"
+                btn.Text = (desc and desc .. " : " or "") .. "[" .. curKey .. "]"
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundColor3 = theme.SectionBackground
+                btn.TextColor3 = theme.Text
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                btn.Parent = wrap
+
+                local btnCorner = Instance.new("UICorner")
+                btnCorner.CornerRadius = UDim.new(0, 6)
+                btnCorner.Parent = btn
+
+                local capturing = false
+                local boundKey = defaultKey -- store as Enum.KeyCode or nil
+
+                -- Update display helper
+                local function updateDisplay()
+                    local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
+                    btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
+                end
+
+                -- capture click to listen for next key press
+                btn.MouseButton1Click:Connect(function()
+                    capturing = true
+                    btn.Text = (desc and desc .. " : " or "") .. "[Press a key...]"
+                end)
+
+                -- global listener for capture and for triggering the callback
+                local listenerConn
+                listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if capturing then
+                        -- only accept KeyCode inputs
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            boundKey = input.KeyCode
+                            capturing = false
+                            updateDisplay()
+                        end
+                        return
+                    end
+
+                    -- trigger callback if bound and matches
+                    if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
+                        pcall(function() callback() end)
+                    end
+                end)
+
+                -- Return handle for access and to set/unset key programmatically
+                return {
+                    Button = btn,
+                    GetKey = function() return boundKey end,
+                    SetKey = function(k) boundKey = k; updateDisplay() end,
+                    Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
                 }
             end
 
