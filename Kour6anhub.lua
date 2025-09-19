@@ -1,7 +1,7 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → embedded dropdown auto-collapse when another opens
+-- v4 → added extra themes (Blood, Synapes, Sentinel) + case-insensitive SetTheme + GetThemeList
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
--- Compatibility patch: added Kavo-style aliases (NewColorPicker, NewTextBox, NewKeyBind)
+-- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -48,12 +48,12 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (Light tweaked slightly for contrast, added Midnight)
+-- Themes (expanded)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        SectionBackground = Color3.fromRGB(250,250,250), -- slightly off-white for contrast
+        SectionBackground = Color3.fromRGB(250,250,250),
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
         Accent = Color3.fromRGB(0,120,255)
@@ -73,6 +73,38 @@ local Themes = {
         Text = Color3.fromRGB(235,235,245),
         SubText = Color3.fromRGB(150,150,170),
         Accent = Color3.fromRGB(120,90,255)
+    },
+    ["Blood"] = {
+        Background = Color3.fromRGB(18,6,8),
+        TabBackground = Color3.fromRGB(30,10,12),
+        SectionBackground = Color3.fromRGB(40,14,16),
+        Text = Color3.fromRGB(245,220,220),
+        SubText = Color3.fromRGB(200,140,140),
+        Accent = Color3.fromRGB(220,20,30)
+    },
+    ["Synapes"] = { -- neon-ish, purple/teal
+        Background = Color3.fromRGB(12,10,20),
+        TabBackground = Color3.fromRGB(22,18,36),
+        SectionBackground = Color3.fromRGB(30,26,46),
+        Text = Color3.fromRGB(235,235,245),
+        SubText = Color3.fromRGB(170,160,190),
+        Accent = Color3.fromRGB(100,160,255)
+    },
+    ["Synapse"] = { -- alias to Synapes (same palette)
+        Background = Color3.fromRGB(12,10,20),
+        TabBackground = Color3.fromRGB(22,18,36),
+        SectionBackground = Color3.fromRGB(30,26,46),
+        Text = Color3.fromRGB(235,235,245),
+        SubText = Color3.fromRGB(170,160,190),
+        Accent = Color3.fromRGB(100,160,255)
+    },
+    ["Sentinel"] = {
+        Background = Color3.fromRGB(8,18,12),
+        TabBackground = Color3.fromRGB(14,28,20),
+        SectionBackground = Color3.fromRGB(20,40,28),
+        Text = Color3.fromRGB(230,245,230),
+        SubText = Color3.fromRGB(160,200,170),
+        Accent = Color3.fromRGB(70,200,120)
     }
 }
 
@@ -161,11 +193,34 @@ function Kour6anHub.CreateLib(title, themeName)
     -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
-    -- runtime theme switcher
+    -- get available theme names
+    function Window:GetThemeList()
+        local out = {}
+        for k,_ in pairs(Themes) do
+            table.insert(out, k)
+        end
+        table.sort(out)
+        return out
+    end
+
+    -- runtime theme switcher (case-insensitive)
     function Window:SetTheme(newThemeName)
-        local newTheme = Themes[newThemeName]
-        if not newTheme then return end
-        theme = newTheme
+        if not newThemeName then return end
+        local foundTheme = nil
+        -- direct lookup first
+        if Themes[newThemeName] then
+            foundTheme = Themes[newThemeName]
+        else
+            local lowerTarget = string.lower(tostring(newThemeName))
+            for k,v in pairs(Themes) do
+                if string.lower(k) == lowerTarget then
+                    foundTheme = v
+                    break
+                end
+            end
+        end
+        if not foundTheme then return end
+        theme = foundTheme
 
         Main.BackgroundColor3 = theme.Background
         Topbar.BackgroundColor3 = theme.SectionBackground
@@ -185,8 +240,14 @@ function Kour6anHub.CreateLib(title, themeName)
                         child.BackgroundColor3 = theme.SectionBackground
                     end
                 elseif child:IsA("TextLabel") then
-                    child.TextColor3 = theme.SubText
+                    -- section titles use SubText, other labels use Text
+                    if child.Font == Enum.Font.GothamBold then
+                        child.TextColor3 = theme.SubText
+                    else
+                        child.TextColor3 = theme.Text
+                    end
                 elseif child:IsA("TextButton") then
+                    -- toggles have attribute _isToggleState
                     child.TextColor3 = theme.Text
                     if not child:GetAttribute("_isToggleState") then
                         child.BackgroundColor3 = theme.SectionBackground
@@ -975,7 +1036,6 @@ function Kour6anHub.CreateLib(title, themeName)
             end
 
             -- === Compatibility aliases for Kavo-style API names ===
-            -- Add these aliases so scripts using different capitalization still work.
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
