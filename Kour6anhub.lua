@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → themes updated (removed Synapes; Synapse alias retained)
+-- v4 → added Toggle UI (Hide/Show/Toggle + hotkey + topbar button)
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -185,6 +185,11 @@ function Kour6anHub.CreateLib(title, themeName)
     -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
+    -- UI toggle state and key
+    Window._uiVisible = true
+    Window._toggleKey = Enum.KeyCode.RightControl
+    Window._storedPosition = Main.Position
+
     -- get available theme names
     function Window:GetThemeList()
         local out = {}
@@ -255,6 +260,86 @@ function Kour6anHub.CreateLib(title, themeName)
             end
         end
     end
+
+    -- Toggle UI methods
+    function Window:Hide()
+        if not Window._uiVisible then return end
+        -- store current position (so dragging persists)
+        Window._storedPosition = Main.Position
+        -- animate off-screen
+        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
+        task.delay(0.18, function()
+            -- disable ScreenGui after animation
+            if ScreenGui then
+                ScreenGui.Enabled = false
+            end
+        end)
+        Window._uiVisible = false
+    end
+
+    function Window:Show()
+        if Window._uiVisible then return end
+        -- re-enable ScreenGui first so animation is visible
+        if ScreenGui then ScreenGui.Enabled = true end
+        -- animate back to stored position (or default)
+        local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
+        tween(Main, {Position = target}, 0.18)
+        Window._uiVisible = true
+    end
+
+    function Window:ToggleUI()
+        if Window._uiVisible then
+            Window:Hide()
+        else
+            Window:Show()
+        end
+    end
+
+    function Window:SetToggleKey(keyEnum)
+        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
+            Window._toggleKey = keyEnum
+        end
+    end
+
+    -- default toggle listener (still active even when ScreenGui disabled)
+    local inputConn
+    inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Window._toggleKey then
+            Window:ToggleUI()
+        end
+    end)
+
+    -- small topbar toggle button
+    local function createTopbarToggle()
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 32, 0, 28)
+        btn.Position = UDim2.new(1, -40, 0, 6)
+        btn.AnchorPoint = Vector2.new(0,0)
+        btn.BackgroundColor3 = theme.TabBackground
+        btn.Text = "▣"
+        btn.Font = Enum.Font.Gotham
+        btn.TextSize = 14
+        btn.TextColor3 = theme.Text
+        btn.AutoButtonColor = false
+        btn.Parent = Topbar
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0,6)
+        corner.Parent = btn
+
+        btn.MouseEnter:Connect(function()
+            tween(btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
+        end)
+        btn.MouseLeave:Connect(function()
+            tween(btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
+        end)
+
+        btn.MouseButton1Click:Connect(function()
+            Window:ToggleUI()
+        end)
+    end
+    createTopbarToggle()
 
     function Window:NewTab(tabName)
         -- Tab button
