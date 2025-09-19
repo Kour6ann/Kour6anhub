@@ -1,6 +1,7 @@
--- Kour6anHub UI Library (Kavo-compatible API)
--- Patched: robust topbar buttons, safe child access, notifications, themes, Kavo-compatible API
--- v4.x - embedded dropdown auto-collapse, notifications bottom-right, Toggle UI + topbar button, many themes
+-- Kour6anHub UI Library (Kavo-compatible API) 
+-- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
+-- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
+-- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -9,7 +10,6 @@ Kour6anHub.__index = Kour6anHub
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
 
 -- Tween helper
 local function tween(obj, props, dur)
@@ -19,7 +19,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging
+-- Utility: Dragging (original style)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
@@ -82,7 +82,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = {
+    ["Synapse"] = { -- alias / single entry for synapse-like palette
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -99,7 +99,7 @@ local Themes = {
         Accent = Color3.fromRGB(70,200,120)
     },
 
-    -- Added themes
+    -- ----- ADDED THEMES -----
     ["Neon"] = {
         Background = Color3.fromRGB(15, 15, 25),
         TabBackground = Color3.fromRGB(25, 25, 40),
@@ -237,7 +237,7 @@ function Kour6anHub.CreateLib(title, themeName)
     Window._storedPosition = Main.Position
 
     -- Notification internals
-    Window._notifications = {}
+    Window._notifications = {}         -- list of notification frames
     Window._notifConfig = {
         width = 300,
         height = 64,
@@ -290,7 +290,6 @@ function Kour6anHub.CreateLib(title, themeName)
         corner.Parent = notif
 
         local accent = Instance.new("Frame")
-        accent.Name = "_accent"
         accent.Size = UDim2.new(0, 6, 1, 0)
         accent.Position = UDim2.new(0, 0, 0, 0)
         accent.BackgroundColor3 = theme.Accent
@@ -329,7 +328,6 @@ function Kour6anHub.CreateLib(title, themeName)
         table.insert(Window._notifications, 1, notif)
         repositionNotifications()
 
-        -- fade in
         notif.BackgroundTransparency = 1
         ttl.TextTransparency = 1
         body.TextTransparency = 1
@@ -430,14 +428,14 @@ function Kour6anHub.CreateLib(title, themeName)
         -- refresh active notifications colors (if any)
         for _, notif in ipairs(Window._notifications) do
             if notif and notif.Parent then
-                local accentFrame = notif:FindFirstChild("_accent")
+                local accentFrame = notif:FindFirstChildOfClass("Frame")
                 if accentFrame then
                     accentFrame.BackgroundColor3 = theme.Accent
                 end
                 for _, c in ipairs(notif:GetChildren()) do
                     if c:IsA("TextLabel") then
                         c.TextColor3 = theme.Text
-                    elseif c:IsA("Frame") and c.Name ~= "_accent" then
+                    elseif c:IsA("Frame") and c ~= accentFrame then
                         c.BackgroundColor3 = theme.SectionBackground
                     end
                 end
@@ -490,39 +488,9 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end)
 
-    -- Demo panel (optional) - created but hidden by default
-    local DemoFrame = Instance.new("Frame")
-    DemoFrame.Name = "_DemoFrame"
-    DemoFrame.Size = UDim2.new(0, 220, 0, 120)
-    DemoFrame.Position = UDim2.new(1, -240, 0, 56)
-    DemoFrame.BackgroundColor3 = theme.SectionBackground
-    DemoFrame.BorderSizePixel = 0
-    DemoFrame.Visible = false
-    DemoFrame.Parent = ScreenGui
-    local demoCorner = Instance.new("UICorner", DemoFrame)
-    demoCorner.CornerRadius = UDim.new(0, 8)
-
-    local demoLabel = Instance.new("TextLabel")
-    demoLabel.Size = UDim2.new(1, -12, 0, 20)
-    demoLabel.Position = UDim2.new(0, 8, 0, 8)
-    demoLabel.BackgroundTransparency = 1
-    demoLabel.Text = "Demo Frame"
-    demoLabel.Font = Enum.Font.GothamBold
-    demoLabel.TextSize = 14
-    demoLabel.TextColor3 = theme.Text
-    demoLabel.TextXAlignment = Enum.TextXAlignment.Left
-    demoLabel.Parent = DemoFrame
-
-    -- createTopbarButtons: creates named children so references are safe
-    local function createTopbarButtons()
-        local existingToggle = Topbar:FindFirstChild("_toggleBtn")
-        local existingDemo = Topbar:FindFirstChild("_demoBtn")
-
-        if existingToggle then existingToggle:Destroy() end
-        if existingDemo then existingDemo:Destroy() end
-
+    -- small topbar toggle button
+    local function createTopbarToggle()
         local btn = Instance.new("TextButton")
-        btn.Name = "_toggleBtn"
         btn.Size = UDim2.new(0, 32, 0, 28)
         btn.Position = UDim2.new(1, -40, 0, 6)
         btn.AnchorPoint = Vector2.new(0,0)
@@ -534,8 +502,9 @@ function Kour6anHub.CreateLib(title, themeName)
         btn.AutoButtonColor = false
         btn.Parent = Topbar
 
-        local corner = Instance.new("UICorner", btn)
+        local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0,6)
+        corner.Parent = btn
 
         btn.MouseEnter:Connect(function()
             tween(btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
@@ -547,39 +516,9 @@ function Kour6anHub.CreateLib(title, themeName)
         btn.MouseButton1Click:Connect(function()
             Window:ToggleUI()
         end)
-
-        -- Demo toggle button (shows/hides the demo floating frame)
-        local demoBtn = Instance.new("TextButton")
-        demoBtn.Name = "_demoBtn"
-        demoBtn.Size = UDim2.new(0, 80, 0, 28)
-        demoBtn.Position = UDim2.new(1, -140, 0, 6)
-        demoBtn.AnchorPoint = Vector2.new(0,0)
-        demoBtn.BackgroundColor3 = theme.TabBackground
-        demoBtn.Text = "Show Demo"
-        demoBtn.Font = Enum.Font.Gotham
-        demoBtn.TextSize = 13
-        demoBtn.TextColor3 = theme.Text
-        demoBtn.AutoButtonColor = false
-        demoBtn.Parent = Topbar
-
-        local dcorner = Instance.new("UICorner", demoBtn)
-        dcorner.CornerRadius = UDim.new(0,6)
-
-        local demoVisible = false
-        local function updateDemo()
-            demoVisible = not not demoVisible
-            DemoFrame.Visible = demoVisible
-            demoBtn.Text = demoVisible and "Hide Demo" or "Show Demo"
-        end
-
-        demoBtn.MouseButton1Click:Connect(function()
-            updateDemo()
-        end)
     end
+    createTopbarToggle()
 
-    createTopbarButtons()
-
-    -- Tab creation
     function Window:NewTab(tabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
@@ -999,7 +938,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- Embedded Dropdown (options appear below the button inside the Section)
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
                 local current = options[1] or nil
@@ -1343,7 +1281,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- Compatibility aliases for Kavo-style API names
+            -- === Compatibility aliases for Kavo-style API names ===
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
@@ -1356,11 +1294,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
     -- apply initial theme (ensures proper contrast)
     Window:SetTheme(themeName or "LightTheme")
-
-    -- Expose some internals for advanced users
-    Window._DemoFrame = DemoFrame
-    Window._Topbar = Topbar
-    Window._TabContainer = TabContainer
 
     return Window
 end
