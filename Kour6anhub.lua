@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → added Toggle UI (Hide/Show/Toggle + hotkey + topbar button) + Notifications (bottom-right)
+-- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -48,7 +48,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (Synapes removed; Synapse alias retained)
+-- Themes (added Neon, Ocean, Forest, Crimson, Sky)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -97,6 +97,52 @@ local Themes = {
         Text = Color3.fromRGB(230,245,230),
         SubText = Color3.fromRGB(160,200,170),
         Accent = Color3.fromRGB(70,200,120)
+    },
+
+    -- ----- ADDED THEMES -----
+    ["Neon"] = {
+        Background = Color3.fromRGB(15, 15, 25),
+        TabBackground = Color3.fromRGB(25, 25, 40),
+        SectionBackground = Color3.fromRGB(35, 35, 55),
+        Text = Color3.fromRGB(240, 240, 255),
+        SubText = Color3.fromRGB(160, 160, 200),
+        Accent = Color3.fromRGB(0, 255, 200)
+    },
+
+    ["Ocean"] = {
+        Background = Color3.fromRGB(5, 20, 35),
+        TabBackground = Color3.fromRGB(10, 30, 50),
+        SectionBackground = Color3.fromRGB(15, 40, 65),
+        Text = Color3.fromRGB(220, 235, 245),
+        SubText = Color3.fromRGB(140, 170, 190),
+        Accent = Color3.fromRGB(0, 140, 255)
+    },
+
+    ["Forest"] = {
+        Background = Color3.fromRGB(10, 20, 12),
+        TabBackground = Color3.fromRGB(16, 30, 18),
+        SectionBackground = Color3.fromRGB(24, 40, 26),
+        Text = Color3.fromRGB(225, 235, 225),
+        SubText = Color3.fromRGB(160, 180, 160),
+        Accent = Color3.fromRGB(70, 200, 100)
+    },
+
+    ["Crimson"] = {
+        Background = Color3.fromRGB(25, 10, 15),
+        TabBackground = Color3.fromRGB(35, 15, 20),
+        SectionBackground = Color3.fromRGB(45, 20, 25),
+        Text = Color3.fromRGB(245, 225, 230),
+        SubText = Color3.fromRGB(180, 150, 160),
+        Accent = Color3.fromRGB(220, 40, 80)
+    },
+
+    ["Sky"] = {
+        Background = Color3.fromRGB(230, 245, 255),
+        TabBackground = Color3.fromRGB(210, 235, 250),
+        SectionBackground = Color3.fromRGB(190, 220, 245),
+        Text = Color3.fromRGB(25, 50, 75),
+        SubText = Color3.fromRGB(90, 120, 150),
+        Accent = Color3.fromRGB(50, 150, 255)
     }
 }
 
@@ -204,7 +250,7 @@ function Kour6anHub.CreateLib(title, themeName)
     local function createNotificationHolder()
         local holder = Instance.new("Frame")
         holder.Name = "_NotificationHolder"
-        holder.Size = UDim2.new(0, Window._notifConfig.width, 0, 1000) -- tall, we'll position children relative to bottom
+        holder.Size = UDim2.new(0, Window._notifConfig.width, 0, 1000)
         holder.AnchorPoint = Vector2.new(1,1)
         holder.Position = UDim2.new(1, -Window._notifConfig.margin, 1, -Window._notifConfig.margin)
         holder.BackgroundTransparency = 1
@@ -218,7 +264,6 @@ function Kour6anHub.CreateLib(title, themeName)
     local function repositionNotifications()
         for i, notif in ipairs(Window._notifications) do
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
-            -- note: position relative to holder's top-left, but we use Y = 1, offset negative to place from bottom
             local finalPos = UDim2.new(0, 0, 1, targetY)
             pcall(function()
                 tween(notif, {Position = finalPos}, 0.18)
@@ -232,20 +277,18 @@ function Kour6anHub.CreateLib(title, themeName)
         local width = Window._notifConfig.width
         local height = Window._notifConfig.height
 
-        -- build notification frame
         local notif = Instance.new("Frame")
         notif.Size = UDim2.new(0, width, 0, height)
         notif.BackgroundColor3 = theme.SectionBackground
         notif.BorderSizePixel = 0
         notif.AnchorPoint = Vector2.new(0,0)
-        notif.Position = UDim2.new(0, 0, 1, 50) -- start slightly below
+        notif.Position = UDim2.new(0, 0, 1, 50)
         notif.Parent = Window._notificationHolder
 
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0, 8)
         corner.Parent = notif
 
-        -- accent bar
         local accent = Instance.new("Frame")
         accent.Size = UDim2.new(0, 6, 1, 0)
         accent.Position = UDim2.new(0, 0, 0, 0)
@@ -256,7 +299,6 @@ function Kour6anHub.CreateLib(title, themeName)
         acorner.CornerRadius = UDim.new(0, 6)
         acorner.Parent = accent
 
-        -- Title
         local ttl = Instance.new("TextLabel")
         ttl.Size = UDim2.new(1, -12, 0, 20)
         ttl.Position = UDim2.new(0, 12, 0, 8)
@@ -269,7 +311,6 @@ function Kour6anHub.CreateLib(title, themeName)
         ttl.Text = tostring(titleText or "Notification")
         ttl.Parent = notif
 
-        -- Body
         local body = Instance.new("TextLabel")
         body.Size = UDim2.new(1, -12, 0, 36)
         body.Position = UDim2.new(0, 12, 0, 28)
@@ -283,12 +324,10 @@ function Kour6anHub.CreateLib(title, themeName)
         body.TextWrapped = true
         body.Parent = notif
 
-        -- slide-in
-        table.insert(Window._notifications, 1, notif) -- newest at index 1 (so stacking visually newest on bottom)
-        -- reposition after inserting
+        -- slide-in & stack
+        table.insert(Window._notifications, 1, notif)
         repositionNotifications()
 
-        -- fade in + small pop
         notif.BackgroundTransparency = 1
         ttl.TextTransparency = 1
         body.TextTransparency = 1
@@ -300,9 +339,7 @@ function Kour6anHub.CreateLib(title, themeName)
             tween(accent, {BackgroundTransparency = 0}, 0.18)
         end)
 
-        -- schedule removal
         task.delay(duration, function()
-            -- fade out & slide down
             pcall(function()
                 tween(notif, {BackgroundTransparency = 1, Position = UDim2.new(0,0,1,50)}, 0.18)
                 tween(ttl, {TextTransparency = 1}, 0.18)
@@ -310,7 +347,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 tween(accent, {BackgroundTransparency = 1}, 0.18)
             end)
             task.wait(0.18)
-            -- remove from list & destroy
             for i, v in ipairs(Window._notifications) do
                 if v == notif then
                     table.remove(Window._notifications, i)
@@ -318,7 +354,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
             end
             if notif and notif.Parent then notif:Destroy() end
-            -- reposition remaining
             repositionNotifications()
         end)
     end
@@ -337,7 +372,6 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:SetTheme(newThemeName)
         if not newThemeName then return end
         local foundTheme = nil
-        -- direct lookup first
         if Themes[newThemeName] then
             foundTheme = Themes[newThemeName]
         else
@@ -370,14 +404,12 @@ function Kour6anHub.CreateLib(title, themeName)
                         child.BackgroundColor3 = theme.SectionBackground
                     end
                 elseif child:IsA("TextLabel") then
-                    -- section titles use SubText, other labels use Text
                     if child.Font == Enum.Font.GothamBold then
                         child.TextColor3 = theme.SubText
                     else
                         child.TextColor3 = theme.Text
                     end
                 elseif child:IsA("TextButton") then
-                    -- toggles have attribute _isToggleState
                     child.TextColor3 = theme.Text
                     if not child:GetAttribute("_isToggleState") then
                         child.BackgroundColor3 = theme.SectionBackground
@@ -396,14 +428,14 @@ function Kour6anHub.CreateLib(title, themeName)
         -- refresh active notifications colors (if any)
         for _, notif in ipairs(Window._notifications) do
             if notif and notif.Parent then
-                local accent = notif:FindFirstChildOfClass("Frame")
-                if accent then
-                    accent.BackgroundColor3 = theme.Accent
+                local accentFrame = notif:FindFirstChildOfClass("Frame")
+                if accentFrame then
+                    accentFrame.BackgroundColor3 = theme.Accent
                 end
                 for _, c in ipairs(notif:GetChildren()) do
                     if c:IsA("TextLabel") then
                         c.TextColor3 = theme.Text
-                    elseif c:IsA("Frame") and c ~= accent then
+                    elseif c:IsA("Frame") and c ~= accentFrame then
                         c.BackgroundColor3 = theme.SectionBackground
                     end
                 end
@@ -415,12 +447,9 @@ function Kour6anHub.CreateLib(title, themeName)
     -- Toggle UI methods
     function Window:Hide()
         if not Window._uiVisible then return end
-        -- store current position (so dragging persists)
         Window._storedPosition = Main.Position
-        -- animate off-screen
         tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
         task.delay(0.18, function()
-            -- disable ScreenGui after animation
             if ScreenGui then
                 ScreenGui.Enabled = false
             end
@@ -430,9 +459,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     function Window:Show()
         if Window._uiVisible then return end
-        -- re-enable ScreenGui first so animation is visible
         if ScreenGui then ScreenGui.Enabled = true end
-        -- animate back to stored position (or default)
         local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
         tween(Main, {Position = target}, 0.18)
         Window._uiVisible = true
@@ -493,7 +520,6 @@ function Kour6anHub.CreateLib(title, themeName)
     createTopbarToggle()
 
     function Window:NewTab(tabName)
-        -- Tab button
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
         TabButton.Size = UDim2.new(1, -20, 0, 40)
@@ -526,7 +552,6 @@ function Kour6anHub.CreateLib(title, themeName)
             end
         end)
 
-        -- Tab content frame (scrolling)
         local TabFrame = Instance.new("ScrollingFrame")
         TabFrame.Size = UDim2.new(1, 0, 1, 0)
         TabFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -546,7 +571,6 @@ function Kour6anHub.CreateLib(title, themeName)
         TabFramePadding.PaddingRight = UDim.new(0, 8)
         TabFramePadding.Parent = TabFrame
 
-        -- autosize canvas using AbsoluteContentSize
         TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             local s = TabLayout.AbsoluteContentSize
             TabFrame.CanvasSize = UDim2.new(0, 0, 0, s.Y + 8)
@@ -567,7 +591,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
-        -- Tab API
         local TabObj = {}
 
         function TabObj:NewSection(sectionName)
@@ -915,7 +938,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- Embedded Dropdown (options appear below the button inside the Section)
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
                 local current = options[1] or nil
@@ -953,7 +975,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 local function openOptions()
-                    -- auto-close any other open embedded dropdown in the window
                     if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
                         pcall(function() Window._currentOpenDropdown() end)
                     end
@@ -1015,7 +1036,6 @@ function Kour6anHub.CreateLib(title, themeName)
                         end)
                     end
 
-                    -- adjust size (allow UIListLayout to compute AbsoluteContentSize)
                     spawn(function()
                         task.wait(0.03)
                         local s = layout.AbsoluteContentSize
@@ -1023,7 +1043,6 @@ function Kour6anHub.CreateLib(title, themeName)
                         list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
                     end)
 
-                    -- mark this dropdown as the current open one
                     Window._currentOpenDropdown = closeOptions
                 end
 
@@ -1087,7 +1106,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 pc.CornerRadius = UDim.new(0, 6)
                 pc.Parent = preview
 
-                -- popup implementation (keeps floating style)
                 local popup = nil
                 local open = false
 
