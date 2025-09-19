@@ -1,6 +1,7 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
 -- v4 → embedded dropdown auto-collapse when another opens
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
+-- Compatibility patch: added Kavo-style aliases (NewColorPicker, NewTextBox, NewKeyBind)
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -435,11 +436,10 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
--- ✅ PATCHED SLIDER (tonumber everywhere)
             function SectionObj:NewSlider(text, min, max, default, callback)
-                min = tonumber(min) or 0
-                max = tonumber(max) or 100
-                default = tonumber(default) or min
+                min = min or 0
+                max = max or 100
+                default = default or min
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 48)
@@ -518,7 +518,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 return {
                     Set = function(v)
-                        v = tonumber(v) or min -- ✅ safe conversion
                         local rel = 0
                         if max > min then
                             rel = math.clamp((v - min) / (max - min), 0, 1)
@@ -974,6 +973,12 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 }
             end
+
+            -- === Compatibility aliases for Kavo-style API names ===
+            -- Add these aliases so scripts using different capitalization still work.
+            SectionObj.NewColorPicker = SectionObj.NewColorpicker
+            SectionObj.NewTextBox = SectionObj.NewTextbox
+            SectionObj.NewKeyBind = SectionObj.NewKeybind
 
             return SectionObj
         end
