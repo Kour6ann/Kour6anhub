@@ -1,6 +1,6 @@
 -- Kour6anHub UI Library (Kavo-compatible API)
--- v4 → patched: tab padding, spacing, alignment, scrolling autosize, returns for controls
--- Added: NewSlider, NewTextbox, NewKeybind
+-- v4 → patched: LightTheme visibility fixes, hover contrast, export ScreenGui handle
+-- Includes NewSlider, NewTextbox, NewKeybind
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -18,12 +18,11 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging (keeps original behavior but safe enough)
+-- Utility: Dragging (keeps original behavior)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
 
-    -- single InputChanged listener and InputBegan per handle (like original, but okay)
     dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -48,12 +47,13 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes
+-- Themes (slight tweaks to ensure Light theme contrast)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        SectionBackground = Color3.fromRGB(255,255,255),
+        -- made section background a touch off-white so white elements contrast
+        SectionBackground = Color3.fromRGB(250,250,250),
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
         Accent = Color3.fromRGB(0,120,255)
@@ -117,7 +117,7 @@ function Kour6anHub.CreateLib(title, themeName)
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
-    TabContainer.Position = UDim2.new(0, 0, 0, 40) -- top aligned with content
+    TabContainer.Position = UDim2.new(0, 0, 0, 40)
     TabContainer.BackgroundColor3 = theme.TabBackground
     TabContainer.Parent = Main
 
@@ -127,7 +127,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     local TabList = Instance.new("UIListLayout")
     TabList.SortOrder = Enum.SortOrder.LayoutOrder
-    TabList.Padding = UDim.new(0, 8) -- increased spacing between tabs
+    TabList.Padding = UDim.new(0, 8)
     TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabList.Parent = TabContainer
 
@@ -149,11 +149,15 @@ function Kour6anHub.CreateLib(title, themeName)
 
     local Window = {}
 
+    -- expose handles so user scripts can manually hide/show
+    Window.ScreenGui = ScreenGui
+    Window.Main = Main
+
     function Window:NewTab(tabName)
         -- Tab button
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
-        TabButton.Size = UDim2.new(1, -20, 0, 40) -- fixed height; inner padding controls breathing room
+        TabButton.Size = UDim2.new(1, -20, 0, 40)
         TabButton.BackgroundColor3 = theme.SectionBackground
         TabButton.TextColor3 = theme.Text
         TabButton.Font = Enum.Font.Gotham
@@ -173,8 +177,9 @@ function Kour6anHub.CreateLib(title, themeName)
         TabButtonPadding.Parent = TabButton
 
         -- Hover + press animations
+        -- NOTE: use TabBackground for hover (not theme.Background) so we don't blend with Main background in LightTheme
         TabButton.MouseEnter:Connect(function()
-            tween(TabButton, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
+            tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
         end)
         TabButton.MouseLeave:Connect(function()
             if TabButton:GetAttribute("active") then
@@ -297,7 +302,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     pcall(function() callback() end)
                 end)
 
-                -- return the button instance so scripts can hook events / change properties
                 return Btn
             end
 
@@ -343,7 +347,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     pcall(function() callback(state) end)
                 end)
 
-                -- return a handle with convenience methods
                 return {
                     Button = ToggleBtn,
                     GetState = function() return state end,
@@ -437,7 +440,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
 
-                -- Return handle with Set/Get
                 return {
                     Set = function(v)
                         local rel = 0
@@ -482,7 +484,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
 
-                -- Return handle with Get/Set and Focus
                 return {
                     TextBox = box,
                     Get = function() return box.Text end,
@@ -493,7 +494,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
             -- NewKeybind(description, defaultKeyEnum, callbackOnPress)
             function SectionObj:NewKeybind(desc, defaultKey, callback)
-                -- defaultKey expected as Enum.KeyCode or nil
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
                 wrap.BackgroundTransparency = 1
@@ -515,26 +515,22 @@ function Kour6anHub.CreateLib(title, themeName)
                 btnCorner.Parent = btn
 
                 local capturing = false
-                local boundKey = defaultKey -- store as Enum.KeyCode or nil
+                local boundKey = defaultKey
 
-                -- Update display helper
                 local function updateDisplay()
                     local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
                     btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
                 end
 
-                -- capture click to listen for next key press
                 btn.MouseButton1Click:Connect(function()
                     capturing = true
                     btn.Text = (desc and desc .. " : " or "") .. "[Press a key...]"
                 end)
 
-                -- global listener for capture and for triggering the callback
                 local listenerConn
                 listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     if gameProcessed then return end
                     if capturing then
-                        -- only accept KeyCode inputs
                         if input.UserInputType == Enum.UserInputType.Keyboard then
                             boundKey = input.KeyCode
                             capturing = false
@@ -543,13 +539,11 @@ function Kour6anHub.CreateLib(title, themeName)
                         return
                     end
 
-                    -- trigger callback if bound and matches
                     if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
                         pcall(function() callback() end)
                     end
                 end)
 
-                -- Return handle for access and to set/unset key programmatically
                 return {
                     Button = btn,
                     GetKey = function() return boundKey end,
