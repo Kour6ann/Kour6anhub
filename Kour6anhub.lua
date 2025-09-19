@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → added extra themes (Blood, Synapes, Sentinel) + case-insensitive SetTheme + GetThemeList
+-- v4 → themes updated (removed Synapes; Synapse alias retained)
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -48,7 +48,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (expanded)
+-- Themes (Synapes removed; Synapse alias retained)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -82,15 +82,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapes"] = { -- neon-ish, purple/teal
-        Background = Color3.fromRGB(12,10,20),
-        TabBackground = Color3.fromRGB(22,18,36),
-        SectionBackground = Color3.fromRGB(30,26,46),
-        Text = Color3.fromRGB(235,235,245),
-        SubText = Color3.fromRGB(170,160,190),
-        Accent = Color3.fromRGB(100,160,255)
-    },
-    ["Synapse"] = { -- alias to Synapes (same palette)
+    ["Synapse"] = { -- alias / single entry for synapse-like palette
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
