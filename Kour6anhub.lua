@@ -1,7 +1,6 @@
--- Kour6anHub UI Library (Modern Rebuild v4)
--- Hover pop animation + Press feedback on Buttons, Toggles, and Tab Buttons
--- Minimal API (Window → Tab → Section → Button/Toggle)
--- Patch: Tab-bar spacing/padding/alignment + light-theme button visibility fixes
+-- Kour6anHub UI Library (Kavo-compatible API) 
+-- v4 → embedded dropdown auto-collapse when another opens
+-- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -11,10 +10,19 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
--- Utility: Dragging
+-- Tween helper
+local function tween(obj, props, dur)
+    local ti = TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local t = TweenService:Create(obj, ti, props)
+    t:Play()
+    return t
+end
+
+-- Utility: Dragging (original style)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
+
     dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
@@ -27,6 +35,7 @@ local function makeDraggable(frame, dragHandle)
             end)
         end
     end)
+
     UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
@@ -38,12 +47,12 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes
+-- Themes (Light tweaked slightly for contrast, added Midnight)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        SectionBackground = Color3.fromRGB(255,255,255),
+        SectionBackground = Color3.fromRGB(250,250,250), -- slightly off-white for contrast
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
         Accent = Color3.fromRGB(0,120,255)
@@ -66,24 +75,21 @@ local Themes = {
     }
 }
 
--- Tween helper
-local function tween(obj, props, dur)
-    TweenService:Create(obj, TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
-end
-
 -- Create window
 function Kour6anHub.CreateLib(title, themeName)
     local theme = Themes[themeName] or Themes["LightTheme"]
 
+    -- ScreenGui (replace if exists)
     local ScreenGui = CoreGui:FindFirstChild("Kour6anHub")
     if ScreenGui then ScreenGui:Destroy() end
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Kour6anHub"
     ScreenGui.Parent = CoreGui
 
+    -- Main frame
     local Main = Instance.new("Frame")
-    Main.Size = UDim2.new(0, 640, 0, 420)                          -- slightly larger to breathe
-    Main.Position = UDim2.new(0.5, -320, 0.5, -210)
+    Main.Size = UDim2.new(0, 600, 0, 400)
+    Main.Position = UDim2.new(0.5, -300, 0.5, -200)
     Main.BackgroundColor3 = theme.Background
     Main.BorderSizePixel = 0
     Main.Parent = ScreenGui
@@ -92,6 +98,7 @@ function Kour6anHub.CreateLib(title, themeName)
     MainCorner.CornerRadius = UDim.new(0, 8)
     MainCorner.Parent = Main
 
+    -- Topbar
     local Topbar = Instance.new("Frame")
     Topbar.Size = UDim2.new(1, 0, 0, 40)
     Topbar.BackgroundColor3 = theme.SectionBackground
@@ -114,9 +121,9 @@ function Kour6anHub.CreateLib(title, themeName)
 
     makeDraggable(Main, Topbar)
 
-    -- Tab container (left) — widened and aligned top with content area
+    -- Tab container (left)
     local TabContainer = Instance.new("Frame")
-    TabContainer.Size = UDim2.new(0, 170, 1, -40)                   -- widened to 170
+    TabContainer.Size = UDim2.new(0, 150, 1, -40)
     TabContainer.Position = UDim2.new(0, 0, 0, 40)
     TabContainer.BackgroundColor3 = theme.TabBackground
     TabContainer.Parent = Main
@@ -127,7 +134,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     local TabList = Instance.new("UIListLayout")
     TabList.SortOrder = Enum.SortOrder.LayoutOrder
-    TabList.Padding = UDim.new(0, 8)                                -- increased spacing between tabs
+    TabList.Padding = UDim.new(0, 8)
     TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabList.Parent = TabContainer
 
@@ -138,10 +145,10 @@ function Kour6anHub.CreateLib(title, themeName)
     TabPadding.PaddingRight = UDim.new(0, 10)
     TabPadding.Parent = TabContainer
 
-    -- Content area (right) — adjusted to match new tab width
+    -- Content area (right)
     local Content = Instance.new("Frame")
-    Content.Size = UDim2.new(1, -190, 1, -40)
-    Content.Position = UDim2.new(0, 190, 0, 40)
+    Content.Size = UDim2.new(1, -160, 1, -40)
+    Content.Position = UDim2.new(0, 160, 0, 40)
     Content.BackgroundTransparency = 1
     Content.Parent = Main
 
@@ -150,6 +157,7 @@ function Kour6anHub.CreateLib(title, themeName)
     local Window = {}
     Window.ScreenGui = ScreenGui
     Window.Main = Main
+    -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
     -- runtime theme switcher
@@ -178,14 +186,13 @@ function Kour6anHub.CreateLib(title, themeName)
                 elseif child:IsA("TextLabel") then
                     child.TextColor3 = theme.SubText
                 elseif child:IsA("TextButton") then
-                    -- make buttons/toggles visible on LightTheme by defaulting to TabBackground
-                    if child:GetAttribute("_isToggleState") then
-                        local tog = child:GetAttribute("_toggle")
-                        child.BackgroundColor3 = tog and theme.Accent or theme.TabBackground
-                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
+                    child.TextColor3 = theme.Text
+                    if not child:GetAttribute("_isToggleState") then
+                        child.BackgroundColor3 = theme.SectionBackground
                     else
-                        child.BackgroundColor3 = theme.TabBackground
-                        child.TextColor3 = theme.Text
+                        local tog = child:GetAttribute("_toggle")
+                        child.BackgroundColor3 = tog and theme.Accent or theme.SectionBackground
+                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
                     end
                 elseif child:IsA("TextBox") then
                     child.BackgroundColor3 = theme.SectionBackground
@@ -196,9 +203,10 @@ function Kour6anHub.CreateLib(title, themeName)
     end
 
     function Window:NewTab(tabName)
+        -- Tab button
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
-        TabButton.Size = UDim2.new(1, -24, 0, 40)                     -- consistent height
+        TabButton.Size = UDim2.new(1, -20, 0, 40)
         TabButton.BackgroundColor3 = theme.SectionBackground
         TabButton.TextColor3 = theme.Text
         TabButton.Font = Enum.Font.Gotham
@@ -211,49 +219,55 @@ function Kour6anHub.CreateLib(title, themeName)
         TabButtonCorner.Parent = TabButton
 
         local TabButtonPadding = Instance.new("UIPadding")
-        TabButtonPadding.PaddingTop = UDim.new(0, 6)                   -- less top padding so text isn't squished
-        TabButtonPadding.PaddingBottom = UDim.new(0, 6)
-        TabButtonPadding.PaddingLeft = UDim.new(0, 12)                 -- equal left/right padding
-        TabButtonPadding.PaddingRight = UDim.new(0, 12)
+        TabButtonPadding.PaddingTop = UDim.new(0, 8)
+        TabButtonPadding.PaddingBottom = UDim.new(0, 8)
+        TabButtonPadding.PaddingLeft = UDim.new(0, 10)
+        TabButtonPadding.PaddingRight = UDim.new(0, 10)
         TabButtonPadding.Parent = TabButton
 
         TabButton.MouseEnter:Connect(function()
-            tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -20, 0, 42)}, 0.09)
+            tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
         end)
         TabButton.MouseLeave:Connect(function()
-            tween(TabButton, {BackgroundColor3 = TabButton:GetAttribute("active") and theme.Accent or theme.SectionBackground, Size = UDim2.new(1, -24, 0, 40)}, 0.09)
-        end)
-        TabButton.MouseButton1Click:Connect(function()
-            tween(TabButton, {Size = UDim2.new(1, -22, 0, 38)}, 0.07)
-            task.wait(0.08)
-            tween(TabButton, {Size = UDim2.new(1, -24, 0, 40)}, 0.07)
+            if TabButton:GetAttribute("active") then
+                tween(TabButton, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
+            else
+                tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
+            end
         end)
 
+        -- Tab content frame (scrolling)
         local TabFrame = Instance.new("ScrollingFrame")
         TabFrame.Size = UDim2.new(1, 0, 1, 0)
-        TabFrame.CanvasSize = UDim2.new(0,0,0,0)
-        TabFrame.ScrollBarThickness = 4
+        TabFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        TabFrame.ScrollBarThickness = 6
         TabFrame.BackgroundTransparency = 1
         TabFrame.Visible = false
         TabFrame.Parent = Content
 
         local TabLayout = Instance.new("UIListLayout")
         TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        TabLayout.Padding = UDim.new(0, 8)
+        TabLayout.Padding = UDim.new(0, 10)
         TabLayout.Parent = TabFrame
 
-        local UIPadding = Instance.new("UIPadding")
-        UIPadding.PaddingTop = UDim.new(0, 8)
-        UIPadding.PaddingLeft = UDim.new(0, 8)
-        UIPadding.PaddingRight = UDim.new(0, 8)
-        UIPadding.Parent = TabFrame
+        local TabFramePadding = Instance.new("UIPadding")
+        TabFramePadding.PaddingTop = UDim.new(0, 8)
+        TabFramePadding.PaddingLeft = UDim.new(0, 8)
+        TabFramePadding.PaddingRight = UDim.new(0, 8)
+        TabFramePadding.Parent = TabFrame
+
+        -- autosize canvas using AbsoluteContentSize
+        TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+            local s = TabLayout.AbsoluteContentSize
+            TabFrame.CanvasSize = UDim2.new(0, 0, 0, s.Y + 8)
+        end)
 
         TabButton.MouseButton1Click:Connect(function()
-            for _, tab in ipairs(Tabs) do
-                tab.Button:SetAttribute("active", false)
-                tab.Button.BackgroundColor3 = theme.SectionBackground
-                tab.Button.TextColor3 = theme.Text
-                tab.Frame.Visible = false
+            for _, t in ipairs(Tabs) do
+                t.Button:SetAttribute("active", false)
+                t.Button.BackgroundColor3 = theme.SectionBackground
+                t.Button.TextColor3 = theme.Text
+                t.Frame.Visible = false
             end
             TabButton:SetAttribute("active", true)
             TabButton.BackgroundColor3 = theme.Accent
@@ -263,7 +277,9 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
+        -- Tab API
         local TabObj = {}
+
         function TabObj:NewSection(sectionName)
             local Section = Instance.new("Frame")
             Section.Size = UDim2.new(1, -10, 0, 50)
@@ -334,8 +350,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 local Btn = Instance.new("TextButton")
                 Btn.Text = text
                 Btn.Size = UDim2.new(1, 0, 0, 34)
-                -- use TabBackground so it shows clearly in LightTheme too
-                Btn.BackgroundColor3 = theme.TabBackground
+                Btn.BackgroundColor3 = theme.SectionBackground
                 Btn.TextColor3 = theme.Text
                 Btn.Font = Enum.Font.Gotham
                 Btn.TextSize = 14
@@ -346,83 +361,76 @@ function Kour6anHub.CreateLib(title, themeName)
                 BtnCorner.CornerRadius = UDim.new(0, 6)
                 BtnCorner.Parent = Btn
 
-                -- Hover
                 Btn.MouseEnter:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, -5, 0, 36)}, 0.1)
+                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
                 Btn.MouseLeave:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.1)
+                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
                 end)
 
-                -- Click
                 Btn.MouseButton1Click:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.1)
-                    task.wait(0.1)
-                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.1)
-                    pcall(callback)
+                    tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
+                    task.wait(0.09)
+                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.12)
+                    pcall(function() callback() end)
                 end)
 
                 return Btn
             end
 
             function SectionObj:NewToggle(text, desc, callback)
-                local Toggle = Instance.new("TextButton")
-                Toggle.Text = text .. " [OFF]"
-                Toggle.Size = UDim2.new(1, 0, 0, 34)
-                Toggle.BackgroundColor3 = theme.TabBackground   -- use TabBackground for visibility
-                Toggle.TextColor3 = theme.Text
-                Toggle.Font = Enum.Font.Gotham
-                Toggle.TextSize = 14
-                Toggle.AutoButtonColor = false
-                Toggle.Parent = Section
+                local ToggleBtn = Instance.new("TextButton")
+                ToggleBtn.Text = text .. " [OFF]"
+                ToggleBtn.Size = UDim2.new(1, 0, 0, 34)
+                ToggleBtn.BackgroundColor3 = theme.SectionBackground
+                ToggleBtn.TextColor3 = theme.Text
+                ToggleBtn.Font = Enum.Font.Gotham
+                ToggleBtn.TextSize = 14
+                ToggleBtn.AutoButtonColor = false
+                ToggleBtn.Parent = Section
 
                 local ToggleCorner = Instance.new("UICorner")
                 ToggleCorner.CornerRadius = UDim.new(0, 6)
-                ToggleCorner.Parent = Toggle
+                ToggleCorner.Parent = ToggleBtn
 
                 local state = false
+                ToggleBtn:SetAttribute("_isToggleState", true)
+                ToggleBtn:SetAttribute("_toggle", state)
 
-                Toggle:SetAttribute("_isToggleState", true)
-                Toggle:SetAttribute("_toggle", state)
-
-                -- Hover
-                Toggle.MouseEnter:Connect(function()
-                    tween(Toggle, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, -5, 0, 36)}, 0.1)
+                ToggleBtn.MouseEnter:Connect(function()
+                    tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
-                Toggle.MouseLeave:Connect(function()
-                    local bg = state and theme.Accent or theme.TabBackground
-                    tween(Toggle, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.1)
+                ToggleBtn.MouseLeave:Connect(function()
+                    local bg = state and theme.Accent or theme.SectionBackground
+                    tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
                 end)
 
-                Toggle.MouseButton1Click:Connect(function()
-                    -- Press
-                    tween(Toggle, {Size = UDim2.new(1, -8, 0, 32)}, 0.1)
-                    task.wait(0.1)
-                    tween(Toggle, {Size = UDim2.new(1, 0, 0, 34)}, 0.1)
-
-                    -- State change
+                ToggleBtn.MouseButton1Click:Connect(function()
+                    tween(ToggleBtn, {Size = UDim2.new(1, -8, 0, 32)}, 0.08)
+                    task.wait(0.09)
+                    tween(ToggleBtn, {Size = UDim2.new(1, 0, 0, 34)}, 0.12)
                     state = not state
-                    Toggle.Text = text .. (state and " [ON]" or " [OFF]")
+                    ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
                     if state then
-                        Toggle.BackgroundColor3 = theme.Accent
-                        Toggle.TextColor3 = Color3.fromRGB(255,255,255)
+                        ToggleBtn.BackgroundColor3 = theme.Accent
+                        ToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
                     else
-                        Toggle.BackgroundColor3 = theme.TabBackground
-                        Toggle.TextColor3 = theme.Text
+                        ToggleBtn.BackgroundColor3 = theme.SectionBackground
+                        ToggleBtn.TextColor3 = theme.Text
                     end
-                    Toggle:SetAttribute("_toggle", state)
-                    pcall(callback, state)
+                    ToggleBtn:SetAttribute("_toggle", state)
+                    pcall(function() callback(state) end)
                 end)
 
                 return {
-                    Button = Toggle,
+                    Button = ToggleBtn,
                     GetState = function() return state end,
                     SetState = function(v)
                         state = not not v
-                        Toggle.Text = text .. (state and " [ON]" or " [OFF]")
-                        Toggle.BackgroundColor3 = state and theme.Accent or theme.TabBackground
-                        Toggle.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
-                        Toggle:SetAttribute("_toggle", state)
+                        ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
+                        ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
+                        ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
+                        ToggleBtn:SetAttribute("_toggle", state)
                     end
                 }
             end
