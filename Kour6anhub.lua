@@ -1,6 +1,6 @@
 -- Kour6anHub UI Library (Kavo-compatible API)
--- v4 → patched: LightTheme visibility fixes, hover contrast, export ScreenGui handle
--- Includes NewSlider, NewTextbox, NewKeybind
+-- v4 → added: Dropdown, Colorpicker, Label, Separator + existing Slider/Textbox/Keybind
+-- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -18,7 +18,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging (keeps original behavior)
+-- Utility: Dragging (original style)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
@@ -47,12 +47,11 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (slight tweaks to ensure Light theme contrast)
+-- Themes (light tweaked to avoid invisibility)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        -- made section background a touch off-white so white elements contrast
         SectionBackground = Color3.fromRGB(250,250,250),
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
@@ -141,15 +140,13 @@ function Kour6anHub.CreateLib(title, themeName)
     -- Content area (right)
     local Content = Instance.new("Frame")
     Content.Size = UDim2.new(1, -160, 1, -40)
-    Content.Position = UDim2.new(0, 160, 0, 40) -- aligned with TabContainer top
+    Content.Position = UDim2.new(0, 160, 0, 40)
     Content.BackgroundTransparency = 1
     Content.Parent = Main
 
     local Tabs = {}
 
     local Window = {}
-
-    -- expose handles so user scripts can manually hide/show
     Window.ScreenGui = ScreenGui
     Window.Main = Main
 
@@ -176,8 +173,6 @@ function Kour6anHub.CreateLib(title, themeName)
         TabButtonPadding.PaddingRight = UDim.new(0, 10)
         TabButtonPadding.Parent = TabButton
 
-        -- Hover + press animations
-        -- NOTE: use TabBackground for hover (not theme.Background) so we don't blend with Main background in LightTheme
         TabButton.MouseEnter:Connect(function()
             tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
         end)
@@ -215,7 +210,6 @@ function Kour6anHub.CreateLib(title, themeName)
             TabFrame.CanvasSize = UDim2.new(0, 0, 0, s.Y + 8)
         end)
 
-        -- clicking tab: hide others, show this one, mark active
         TabButton.MouseButton1Click:Connect(function()
             for _, t in ipairs(Tabs) do
                 t.Button:SetAttribute("active", false)
@@ -231,7 +225,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
-        -- Tab API
         local TabObj = {}
 
         function TabObj:NewSection(sectionName)
@@ -268,8 +261,37 @@ function Kour6anHub.CreateLib(title, themeName)
             Label.TextXAlignment = Enum.TextXAlignment.Left
             Label.Parent = Section
 
-            -- Section API
             local SectionObj = {}
+
+            function SectionObj:NewLabel(text)
+                local lbl = Instance.new("TextLabel")
+                lbl.Text = text or ""
+                lbl.Size = UDim2.new(1, 0, 0, 18)
+                lbl.BackgroundTransparency = 1
+                lbl.TextColor3 = theme.Text
+                lbl.Font = Enum.Font.Gotham
+                lbl.TextSize = 14
+                lbl.TextXAlignment = Enum.TextXAlignment.Left
+                lbl.Parent = Section
+                return lbl
+            end
+
+            function SectionObj:NewSeparator()
+                local sep = Instance.new("Frame")
+                sep.Size = UDim2.new(1, 0, 0, 8)
+                sep.BackgroundTransparency = 1
+                sep.Parent = Section
+                local line = Instance.new("Frame")
+                line.Size = UDim2.new(1, -8, 0, 2)
+                line.Position = UDim2.new(0, 4, 0, 3)
+                line.BackgroundColor3 = theme.TabBackground
+                line.BorderSizePixel = 0
+                line.Parent = sep
+                local corner = Instance.new("UICorner")
+                corner.CornerRadius = UDim.new(0, 2)
+                corner.Parent = line
+                return line
+            end
 
             function SectionObj:NewButton(text, desc, callback)
                 local Btn = Instance.new("TextButton")
@@ -286,7 +308,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 BtnCorner.CornerRadius = UDim.new(0, 6)
                 BtnCorner.Parent = Btn
 
-                -- Hover
                 Btn.MouseEnter:Connect(function()
                     tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
@@ -294,7 +315,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
                 end)
 
-                -- Click
                 Btn.MouseButton1Click:Connect(function()
                     tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
                     task.wait(0.09)
@@ -322,7 +342,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local state = false
 
-                -- Hover
                 ToggleBtn.MouseEnter:Connect(function()
                     tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
                 end)
@@ -359,7 +378,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- NewSlider(text, min, max, default, callback)
             function SectionObj:NewSlider(text, min, max, default, callback)
                 min = min or 0
                 max = max or 100
@@ -456,7 +474,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- NewTextbox(placeholder, defaultText, callbackOnEnter)
             function SectionObj:NewTextbox(placeholder, defaultText, callback)
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -492,7 +509,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
-            -- NewKeybind(description, defaultKeyEnum, callbackOnPress)
             function SectionObj:NewKeybind(desc, defaultKey, callback)
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -549,6 +565,347 @@ function Kour6anHub.CreateLib(title, themeName)
                     GetKey = function() return boundKey end,
                     SetKey = function(k) boundKey = k; updateDisplay() end,
                     Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
+                }
+            end
+
+            -- NewDropdown(name, optionsTable, callback)
+            function SectionObj:NewDropdown(name, options, callback)
+                options = options or {}
+                local current = options[1] or nil
+
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
+
+                local btn = Instance.new("TextButton")
+                btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundColor3 = theme.SectionBackground
+                btn.TextColor3 = theme.Text
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                btn.Parent = wrap
+
+                local btnCorner = Instance.new("UICorner")
+                btnCorner.CornerRadius = UDim.new(0, 6)
+                btnCorner.Parent = btn
+
+                local open = false
+                local popup -- will be Frame parented to ScreenGui
+
+                local function closePopup()
+                    if popup and popup.Parent then
+                        popup:Destroy()
+                    end
+                    popup = nil
+                    open = false
+                end
+
+                local function openPopup()
+                    closePopup()
+                    open = true
+                    popup = Instance.new("Frame")
+                    popup.Size = UDim2.new(0, 180, 0, math.max(30, #options * 28))
+                    popup.BackgroundColor3 = theme.SectionBackground
+                    popup.BorderSizePixel = 0
+                    popup.Parent = ScreenGui
+                    local pc = Instance.new("UICorner", popup)
+                    pc.CornerRadius = UDim.new(0, 6)
+
+                    -- position near the button
+                    local abs = wrap.AbsolutePosition
+                    popup.Position = UDim2.new(0, abs.X + 160, 0, abs.Y) -- place to right of tabs area
+                    -- content
+                    local list = Instance.new("ScrollingFrame")
+                    list.Parent = popup
+                    list.Size = UDim2.new(1, 0, 1, 0)
+                    list.CanvasSize = UDim2.new(0, 0, 0, 0)
+                    list.ScrollBarThickness = 6
+                    list.BackgroundTransparency = 1
+
+                    local layout = Instance.new("UIListLayout")
+                    layout.Parent = list
+                    layout.SortOrder = Enum.SortOrder.LayoutOrder
+                    layout.Padding = UDim.new(0, 4)
+
+                    -- Add option buttons
+                    for i, opt in ipairs(options) do
+                        local optBtn = Instance.new("TextButton")
+                        optBtn.Size = UDim2.new(1, -8, 0, 24)
+                        optBtn.Position = UDim2.new(0, 4, 0, (i-1) * 28)
+                        optBtn.BackgroundColor3 = theme.Background
+                        optBtn.Text = tostring(opt)
+                        optBtn.Font = Enum.Font.Gotham
+                        optBtn.TextSize = 13
+                        optBtn.TextColor3 = theme.Text
+                        optBtn.AutoButtonColor = false
+                        optBtn.Parent = list
+
+                        local oc = Instance.new("UICorner")
+                        oc.CornerRadius = UDim.new(0, 6)
+                        oc.Parent = optBtn
+
+                        optBtn.MouseEnter:Connect(function()
+                            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
+                        end)
+                        optBtn.MouseLeave:Connect(function()
+                            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
+                        end)
+                        optBtn.MouseButton1Click:Connect(function()
+                            current = opt
+                            btn.Text = (name and name .. ": " or "") .. tostring(current)
+                            pcall(function() callback(current) end)
+                            closePopup()
+                        end)
+                    end
+
+                    -- close if click outside
+                    local conn
+                    conn = UserInputService.InputBegan:Connect(function(input, gp)
+                        if gp then return end
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            local mp = input.Position
+                            local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
+                            local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
+                            if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
+                                conn:Disconnect()
+                                closePopup()
+                            end
+                        end
+                    end)
+                end
+
+                btn.MouseButton1Click:Connect(function()
+                    if open then
+                        closePopup()
+                    else
+                        openPopup()
+                    end
+                end)
+
+                return {
+                    Button = btn,
+                    Get = function() return current end,
+                    Set = function(v)
+                        current = v
+                        btn.Text = (name and name .. ": " or "") .. tostring(current)
+                        pcall(function() callback(current) end)
+                    end,
+                    Refresh = function(newOptions)
+                        options = newOptions or {}
+                        current = options[1] or nil
+                        btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
+                    end
+                }
+            end
+
+            -- NewColorpicker(name, defaultColor, callback)
+            function SectionObj:NewColorpicker(name, defaultColor, callback)
+                defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
+                local cur = defaultColor
+
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
+
+                local btn = Instance.new("TextButton")
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundColor3 = theme.SectionBackground
+                btn.AutoButtonColor = false
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.TextColor3 = theme.Text
+                btn.Text = (name and name .. " : " or "") .. "[Color]"
+                btn.Parent = wrap
+
+                local preview = Instance.new("Frame")
+                preview.Size = UDim2.new(0, 24, 0, 24)
+                preview.Position = UDim2.new(1, -28, 0.5, -12)
+                preview.BackgroundColor3 = cur
+                preview.Parent = wrap
+                local pc = Instance.new("UICorner")
+                pc.CornerRadius = UDim.new(0, 6)
+                pc.Parent = preview
+
+                local popup = nil
+                local open = false
+
+                local function closePopup()
+                    if popup and popup.Parent then
+                        popup:Destroy()
+                    end
+                    popup = nil
+                    open = false
+                end
+
+                local function createSlider(parent, y, labelText, initial, onChange)
+                    local lbl = Instance.new("TextLabel")
+                    lbl.Text = labelText
+                    lbl.Size = UDim2.new(1, -12, 0, 16)
+                    lbl.Position = UDim2.new(0, 8, 0, y)
+                    lbl.BackgroundTransparency = 1
+                    lbl.TextColor3 = theme.SubText
+                    lbl.Font = Enum.Font.Gotham
+                    lbl.TextSize = 12
+                    lbl.TextXAlignment = Enum.TextXAlignment.Left
+                    lbl.Parent = parent
+
+                    local bar = Instance.new("Frame")
+                    bar.Size = UDim2.new(1, -12, 0, 10)
+                    bar.Position = UDim2.new(0, 8, 0, y + 18)
+                    bar.BackgroundColor3 = theme.SectionBackground
+                    bar.Parent = parent
+                    local barCorner = Instance.new("UICorner")
+                    barCorner.CornerRadius = UDim.new(0, 6)
+                    barCorner.Parent = bar
+
+                    local fill = Instance.new("Frame")
+                    local rel = initial or 0
+                    fill.Size = UDim2.new(rel, 0, 1, 0)
+                    fill.BackgroundColor3 = theme.Accent
+                    fill.Parent = bar
+                    local fillCorner = Instance.new("UICorner")
+                    fillCorner.CornerRadius = UDim.new(0, 6)
+                    fillCorner.Parent = fill
+
+                    local knob = Instance.new("Frame")
+                    knob.Size = UDim2.new(0, 10, 0, 10)
+                    knob.Position = UDim2.new(rel, -5, 0, 0)
+                    knob.AnchorPoint = Vector2.new(0, 0)
+                    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+                    knob.Parent = bar
+                    local kc = Instance.new("UICorner")
+                    kc.CornerRadius = UDim.new(0, 6)
+                    kc.Parent = knob
+
+                    local dragging = false
+                    bar.InputBegan:Connect(function(inp)
+                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                            dragging = true
+                            local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            fill.Size = UDim2.new(relx, 0, 1, 0)
+                            knob.Position = UDim2.new(relx, -5, 0, 0)
+                            pcall(function() onChange(relx) end)
+                        end
+                    end)
+                    bar.InputEnded:Connect(function(inp)
+                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                            dragging = false
+                        end
+                    end)
+                    UserInputService.InputChanged:Connect(function(inp)
+                        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
+                            local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            fill.Size = UDim2.new(relx, 0, 1, 0)
+                            knob.Position = UDim2.new(relx, -5, 0, 0)
+                            pcall(function() onChange(relx) end)
+                        end
+                    end)
+
+                    return {
+                        Set = function(v)
+                            local rv = math.clamp(v, 0, 1)
+                            fill.Size = UDim2.new(rv, 0, 1, 0)
+                            knob.Position = UDim2.new(rv, -5, 0, 0)
+                        end,
+                        Get = function() return fill.Size.X.Scale end
+                    }
+                end
+
+                btn.MouseButton1Click:Connect(function()
+                    if open then
+                        closePopup()
+                        return
+                    end
+                    open = true
+                    popup = Instance.new("Frame")
+                    popup.Size = UDim2.new(0, 260, 0, 160)
+                    popup.BackgroundColor3 = theme.SectionBackground
+                    popup.BorderSizePixel = 0
+                    popup.Parent = ScreenGui
+                    local corner = Instance.new("UICorner", popup)
+                    corner.CornerRadius = UDim.new(0, 8)
+
+                    -- position next to the wrap (to the right of the tab area)
+                    local ap = wrap.AbsolutePosition
+                    popup.Position = UDim2.new(0, ap.X + 160, 0, ap.Y + 20)
+
+                    local title = Instance.new("TextLabel")
+                    title.Text = name or "Color"
+                    title.Size = UDim2.new(1, -12, 0, 18)
+                    title.Position = UDim2.new(0, 8, 0, 6)
+                    title.BackgroundTransparency = 1
+                    title.TextColor3 = theme.SubText
+                    title.Font = Enum.Font.GothamBold
+                    title.TextSize = 13
+                    title.TextXAlignment = Enum.TextXAlignment.Left
+                    title.Parent = popup
+
+                    local previewBox = Instance.new("Frame")
+                    previewBox.Size = UDim2.new(0, 36, 0, 36)
+                    previewBox.Position = UDim2.new(1, -44, 0, 8)
+                    previewBox.BackgroundColor3 = cur
+                    previewBox.Parent = popup
+                    local pc2 = Instance.new("UICorner", previewBox)
+                    pc2.CornerRadius = UDim.new(0, 6)
+
+                    -- initial rgb
+                    local r,g,b = cur.R, cur.G, cur.B
+
+                    local rSlider = createSlider(popup, 34, "R", r, function(rel)
+                        r = rel
+                        cur = Color3.new(r, g, b)
+                        previewBox.BackgroundColor3 = cur
+                        pcall(function() callback(cur) end)
+                    end)
+                    local gSlider = createSlider(popup, 66, "G", g, function(rel)
+                        g = rel
+                        cur = Color3.new(r, g, b)
+                        previewBox.BackgroundColor3 = cur
+                        pcall(function() callback(cur) end)
+                    end)
+                    local bSlider = createSlider(popup, 98, "B", b, function(rel)
+                        b = rel
+                        cur = Color3.new(r, g, b)
+                        previewBox.BackgroundColor3 = cur
+                        pcall(function() callback(cur) end)
+                    end)
+
+                    -- close on outside click
+                    local conn
+                    conn = UserInputService.InputBegan:Connect(function(input, gp)
+                        if gp then return end
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            local mp = input.Position
+                            local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
+                            local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
+                            if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
+                                conn:Disconnect()
+                                closePopup()
+                            end
+                        end
+                    end)
+                end)
+
+                return {
+                    Button = btn,
+                    Get = function() return cur end,
+                    Set = function(c)
+                        if type(c) == "table" then
+                            -- accept {r,g,b} or {R=..,G=..,B=..}
+                            local ok = pcall(function()
+                                cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
+                            end)
+                            if not ok then return end
+                        elseif typeof(c) == "Color3" then
+                            cur = c
+                        end
+                        preview.BackgroundColor3 = cur
+                        pcall(function() callback(cur) end)
+                    end
                 }
             end
 
