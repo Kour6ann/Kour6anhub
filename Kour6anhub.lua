@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → added Toggle UI (Hide/Show/Toggle + hotkey + topbar button)
+-- v4 → added Notifications system (Window:Notify / Window:Notification)
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -48,7 +48,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (Synapes removed; Synapse alias retained)
+-- Themes
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -99,6 +99,32 @@ local Themes = {
         Accent = Color3.fromRGB(70,200,120)
     }
 }
+
+-- Notification helper UI (separate ScreenGui so notifications show even if main UI is hidden)
+local function ensureNotificationGui()
+    local gui = CoreGui:FindFirstChild("Kour6anHub_Notifs")
+    if gui and gui.Parent then return gui end
+    gui = Instance.new("ScreenGui")
+    gui.Name = "Kour6anHub_Notifs"
+    gui.ResetOnSpawn = false
+    gui.Parent = CoreGui
+
+    local holder = Instance.new("Frame")
+    holder.Name = "_holder"
+    holder.AnchorPoint = Vector2.new(1, 0)
+    holder.Position = UDim2.new(1, -12, 0, 12)
+    holder.Size = UDim2.new(0, 320, 0, 0)
+    holder.BackgroundTransparency = 1
+    holder.Parent = gui
+
+    local layout = Instance.new("UIListLayout")
+    layout.FillDirection = Enum.FillDirection.Vertical
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = holder
+
+    return gui
+end
 
 -- Create window
 function Kour6anHub.CreateLib(title, themeName)
@@ -190,6 +216,18 @@ function Kour6anHub.CreateLib(title, themeName)
     Window._toggleKey = Enum.KeyCode.RightControl
     Window._storedPosition = Main.Position
 
+    -- Notification store (notifs gui)
+    local NotifGui = ensureNotificationGui()
+    local NotifHolder = NotifGui:FindFirstChild("_holder")
+
+    -- color map for notification types (can be extended / changed by themes later)
+    local notifTypeColor = {
+        info = function() return theme.Accent end,
+        success = function() return Color3.fromRGB(70,200,120) end,
+        error = function() return Color3.fromRGB(220,60,60) end,
+        warn = function() return Color3.fromRGB(220,170,40) end
+    }
+
     -- get available theme names
     function Window:GetThemeList()
         local out = {}
@@ -259,6 +297,9 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
             end
         end
+
+        -- update notif color mapping to use new theme accent for info
+        notifTypeColor.info = function() return theme.Accent end
     end
 
     -- Toggle UI methods
@@ -1117,10 +1158,151 @@ function Kour6anHub.CreateLib(title, themeName)
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
 
+            -- === Notification API on Window (exposed below) ===
+
             return SectionObj
         end
 
         return TabObj
+    end
+
+    -- === Notification API implementation on Window ===
+    -- Window:Notify(title, text, durationSeconds, type)
+    function Window:Notify(title, text, duration, kind)
+        duration = (type(duration) == "number" and duration) or 4
+        kind = kind or "info"
+        local kindKey = tostring(kind):lower()
+        if not notifTypeColor[kindKey] then kindKey = "info" end
+
+        -- create holder if missing
+        NotifGui = ensureNotificationGui()
+        NotifHolder = NotifGui:FindFirstChild("_holder")
+
+        -- notification frame
+        local notif = Instance.new("Frame")
+        notif.Name = "notification"
+        notif.Size = UDim2.new(0, 320, 0, 64)
+        notif.BackgroundColor3 = theme.SectionBackground
+        notif.BorderSizePixel = 0
+        notif.Parent = NotifHolder
+        notif.LayoutOrder = #NotifHolder:GetChildren() + 1
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = notif
+
+        -- left color bar (indicator)
+        local colorBar = Instance.new("Frame")
+        colorBar.Size = UDim2.new(0, 6, 1, 0)
+        colorBar.Position = UDim2.new(0, 0, 0, 0)
+        colorBar.BackgroundColor3 = notifTypeColor[kindKey]()
+        colorBar.BorderSizePixel = 0
+        colorBar.Parent = notif
+
+        -- inner padding frame so text sits flush
+        local inner = Instance.new("Frame")
+        inner.BackgroundTransparency = 1
+        inner.Size = UDim2.new(1, -12, 1, -12)
+        inner.Position = UDim2.new(0, 12, 0, 6)
+        inner.Parent = notif
+
+        local titleLbl = Instance.new("TextLabel")
+        titleLbl.Text = title or ""
+        titleLbl.Size = UDim2.new(1, 0, 0, 18)
+        titleLbl.BackgroundTransparency = 1
+        titleLbl.Font = Enum.Font.GothamBold
+        titleLbl.TextSize = 14
+        titleLbl.TextColor3 = theme.Text
+        titleLbl.TextXAlignment = Enum.TextXAlignment.Left
+        titleLbl.Parent = inner
+
+        local bodyLbl = Instance.new("TextLabel")
+        bodyLbl.Text = text or ""
+        bodyLbl.Size = UDim2.new(1, 0, 0, 36)
+        bodyLbl.Position = UDim2.new(0, 0, 0, 18)
+        bodyLbl.BackgroundTransparency = 1
+        bodyLbl.Font = Enum.Font.Gotham
+        bodyLbl.TextSize = 13
+        bodyLbl.TextColor3 = theme.SubText
+        bodyLbl.TextXAlignment = Enum.TextXAlignment.Left
+        bodyLbl.TextYAlignment = Enum.TextYAlignment.Top
+        bodyLbl.ClipsDescendants = true
+        bodyLbl.Parent = inner
+
+        -- close button (small X)
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Text = "✕"
+        closeBtn.Size = UDim2.new(0, 26, 0, 20)
+        closeBtn.Position = UDim2.new(1, -26, 0, 6)
+        closeBtn.AnchorPoint = Vector2.new(0,0)
+        closeBtn.BackgroundTransparency = 1
+        closeBtn.Font = Enum.Font.Gotham
+        closeBtn.TextSize = 14
+        closeBtn.TextColor3 = theme.SubText
+        closeBtn.Parent = notif
+
+        -- initial entry animation: spawn off to the right and slide in
+        notif.Position = UDim2.new(1, 340, 0, 12 + (#NotifHolder:GetChildren()-1) * (64 + 8))
+        tween(notif, {Position = UDim2.new(1, -12, 0, 12 + (#NotifHolder:GetChildren()-1) * (64 + 8))}, 0.18)
+
+        -- fade-in text
+        titleLbl.TextTransparency = 1
+        bodyLbl.TextTransparency = 1
+        tween(titleLbl, {TextTransparency = 0}, 0.18)
+        tween(bodyLbl, {TextTransparency = 0}, 0.18)
+
+        local closed = false
+        local function closeNow()
+            if closed then return end
+            closed = true
+            -- slide out & fade then destroy
+            tween(notif, {Position = UDim2.new(1, 340, 0, notif.Position.Y.Offset)}, 0.15)
+            tween(titleLbl, {TextTransparency = 1}, 0.12)
+            tween(bodyLbl, {TextTransparency = 1}, 0.12)
+            task.delay(0.15, function()
+                if notif and notif.Parent then
+                    notif:Destroy()
+                end
+            end)
+        end
+
+        closeBtn.MouseButton1Click:Connect(function()
+            closeNow()
+        end)
+
+        -- clicking anywhere also closes
+        notif.InputBegan:Connect(function(inp)
+            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
+                closeNow()
+            end
+        end)
+
+        -- auto-close timer
+        if duration > 0 then
+            task.delay(duration, function()
+                pcall(closeNow)
+            end)
+        end
+
+        -- return a simple object so callers can close programmatically
+        local obj = {}
+        function obj:Close()
+            closeNow()
+        end
+        function obj:IsClosed()
+            return closed
+        end
+        return obj
+    end
+
+    -- alternative API using table
+    function Window:Notification(opts)
+        if type(opts) ~= "table" then return end
+        local title = opts.Title or opts.TitleText or opts.title or ""
+        local content = opts.Content or opts.Text or opts.content or ""
+        local duration = opts.Duration or opts.Time or opts.duration or 4
+        local typ = opts.Type or opts.Kind or opts.type or "info"
+        return Window:Notify(title, content, duration, typ)
     end
 
     -- apply initial theme (ensures proper contrast)
