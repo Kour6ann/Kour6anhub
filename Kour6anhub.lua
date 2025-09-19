@@ -1,5 +1,5 @@
--- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
+-- Kour6anHub UI Library (Kavo-compatible API)
+-- v4 → Toggle UI + Notifications + Persistent Config + extra themes
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -10,6 +10,33 @@ Kour6anHub.__index = Kour6anHub
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local HttpService = game:GetService("HttpService")
+
+-- safe file API wrappers (exploit runtimes)
+local has_writefile = type(writefile) == "function"
+local has_readfile  = type(readfile)  == "function"
+local has_isfile    = type(isfile)    == "function"
+
+local function safeWrite(path, contents)
+    if not has_writefile then return false, "writefile not available" end
+    local ok, err = pcall(function() writefile(path, contents) end)
+    if not ok then return false, err end
+    return true
+end
+
+local function safeRead(path)
+    if not has_readfile then return false, "readfile not available" end
+    local ok, res = pcall(function() return readfile(path) end)
+    if not ok then return false, res end
+    return true, res
+end
+
+local function safeIsFile(path)
+    if not has_isfile then return false end
+    local ok, res = pcall(function() return isfile(path) end)
+    if not ok then return false end
+    return res
+end
 
 -- Tween helper
 local function tween(obj, props, dur)
@@ -19,7 +46,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging (original style)
+-- Drag helper
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
@@ -48,7 +75,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (added Neon, Ocean, Forest, Crimson, Sky)
+-- Themes (includes Neon, Ocean, Forest, Crimson, Sky)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -82,7 +109,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = { -- alias / single entry for synapse-like palette
+    ["Synapse"] = {
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -98,8 +125,6 @@ local Themes = {
         SubText = Color3.fromRGB(160,200,170),
         Accent = Color3.fromRGB(70,200,120)
     },
-
-    -- ----- ADDED THEMES -----
     ["Neon"] = {
         Background = Color3.fromRGB(15, 15, 25),
         TabBackground = Color3.fromRGB(25, 25, 40),
@@ -108,7 +133,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 160, 200),
         Accent = Color3.fromRGB(0, 255, 200)
     },
-
     ["Ocean"] = {
         Background = Color3.fromRGB(5, 20, 35),
         TabBackground = Color3.fromRGB(10, 30, 50),
@@ -117,7 +141,6 @@ local Themes = {
         SubText = Color3.fromRGB(140, 170, 190),
         Accent = Color3.fromRGB(0, 140, 255)
     },
-
     ["Forest"] = {
         Background = Color3.fromRGB(10, 20, 12),
         TabBackground = Color3.fromRGB(16, 30, 18),
@@ -126,7 +149,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 180, 160),
         Accent = Color3.fromRGB(70, 200, 100)
     },
-
     ["Crimson"] = {
         Background = Color3.fromRGB(25, 10, 15),
         TabBackground = Color3.fromRGB(35, 15, 20),
@@ -135,7 +157,6 @@ local Themes = {
         SubText = Color3.fromRGB(180, 150, 160),
         Accent = Color3.fromRGB(220, 40, 80)
     },
-
     ["Sky"] = {
         Background = Color3.fromRGB(230, 245, 255),
         TabBackground = Color3.fromRGB(210, 235, 250),
@@ -145,6 +166,14 @@ local Themes = {
         Accent = Color3.fromRGB(50, 150, 255)
     }
 }
+
+-- sanitize control id
+local function sanitizeKey(s)
+    s = tostring(s or "")
+    s = string.gsub(s, "%s+", "_")
+    s = string.gsub(s, "[^%w_%.%-:]", "")
+    return s
+end
 
 -- Create window
 function Kour6anHub.CreateLib(title, themeName)
@@ -156,6 +185,7 @@ function Kour6anHub.CreateLib(title, themeName)
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Kour6anHub"
     ScreenGui.Parent = CoreGui
+    ScreenGui.ResetOnSpawn = false
 
     -- Main frame
     local Main = Instance.new("Frame")
@@ -224,29 +254,24 @@ function Kour6anHub.CreateLib(title, themeName)
     Content.Parent = Main
 
     local Tabs = {}
-
     local Window = {}
     Window.ScreenGui = ScreenGui
     Window.Main = Main
-    -- pointer to currently open embedded dropdown close function
-    Window._currentOpenDropdown = nil
+
+    -- persistence registry
+    Window._controls = {} -- id -> {type, get, set}
+    Window._autosave = false
+    Window._autosave_path = "kour6anhub_config.json"
 
     -- UI toggle state and key
     Window._uiVisible = true
     Window._toggleKey = Enum.KeyCode.RightControl
     Window._storedPosition = Main.Position
 
-    -- Notification internals
-    Window._notifications = {}         -- list of notification frames
-    Window._notifConfig = {
-        width = 300,
-        height = 64,
-        spacing = 8,
-        margin = 16,
-        defaultDuration = 4
-    }
+    -- Notifications
+    Window._notifications = {}
+    Window._notifConfig = { width = 300, height = 64, spacing = 8, margin = 16, defaultDuration = 4 }
 
-    -- create notification holder (bottom-right)
     local function createNotificationHolder()
         local holder = Instance.new("Frame")
         holder.Name = "_NotificationHolder"
@@ -257,10 +282,8 @@ function Kour6anHub.CreateLib(title, themeName)
         holder.Parent = ScreenGui
         return holder
     end
-
     Window._notificationHolder = createNotificationHolder()
 
-    -- helper to reposition all notifications (stack bottom-up)
     local function repositionNotifications()
         for i, notif in ipairs(Window._notifications) do
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
@@ -271,7 +294,6 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
-    -- add a notification
     function Window:Notify(titleText, bodyText, duration)
         duration = duration or Window._notifConfig.defaultDuration
         local width = Window._notifConfig.width
@@ -324,7 +346,6 @@ function Kour6anHub.CreateLib(title, themeName)
         body.TextWrapped = true
         body.Parent = notif
 
-        -- slide-in & stack
         table.insert(Window._notifications, 1, notif)
         repositionNotifications()
 
@@ -358,105 +379,77 @@ function Kour6anHub.CreateLib(title, themeName)
         end)
     end
 
-    -- get available theme names
-    function Window:GetThemeList()
-        local out = {}
-        for k,_ in pairs(Themes) do
-            table.insert(out, k)
+    -- Persistence API
+    local function registerControl(id, typ, getfn, setfn)
+        if not id or id == "" then id = HttpService:GenerateGUID(false) end
+        id = sanitizeKey(id)
+        Window._controls[id] = { type = typ, get = getfn, set = setfn }
+        return id
+    end
+
+    function Window:ExportConfig()
+        local out = { controls = {}, meta = { theme = nil, title = title or "Kour6anHub" } }
+        out.meta.theme = nil
+        for id, info in pairs(Window._controls) do
+            local ok, val = pcall(info.get)
+            if ok then
+                out.controls[id] = { type = info.type, value = val }
+            end
         end
-        table.sort(out)
         return out
     end
 
-    -- runtime theme switcher (case-insensitive)
-    function Window:SetTheme(newThemeName)
-        if not newThemeName then return end
-        local foundTheme = nil
-        if Themes[newThemeName] then
-            foundTheme = Themes[newThemeName]
-        else
-            local lowerTarget = string.lower(tostring(newThemeName))
-            for k,v in pairs(Themes) do
-                if string.lower(k) == lowerTarget then
-                    foundTheme = v
-                    break
-                end
+    function Window:ImportConfig(tbl)
+        if type(tbl) ~= "table" or not tbl.controls then return false, "invalid table" end
+        for id, stored in pairs(tbl.controls) do
+            local ctrl = Window._controls[id]
+            if ctrl and type(stored) == "table" then
+                pcall(function() ctrl.set(stored.value) end)
             end
         end
-        if not foundTheme then return end
-        theme = foundTheme
-
-        Main.BackgroundColor3 = theme.Background
-        Topbar.BackgroundColor3 = theme.SectionBackground
-        Title.TextColor3 = theme.Text
-        TabContainer.BackgroundColor3 = theme.TabBackground
-
-        for _, entry in ipairs(Tabs) do
-            local btn = entry.Button
-            local frame = entry.Frame
-            local active = btn:GetAttribute("active")
-            btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
-            btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
-
-            for _, child in ipairs(frame:GetDescendants()) do
-                if child:IsA("Frame") then
-                    if child.Name == "_section" then
-                        child.BackgroundColor3 = theme.SectionBackground
-                    end
-                elseif child:IsA("TextLabel") then
-                    if child.Font == Enum.Font.GothamBold then
-                        child.TextColor3 = theme.SubText
-                    else
-                        child.TextColor3 = theme.Text
-                    end
-                elseif child:IsA("TextButton") then
-                    child.TextColor3 = theme.Text
-                    if not child:GetAttribute("_isToggleState") then
-                        child.BackgroundColor3 = theme.SectionBackground
-                    else
-                        local tog = child:GetAttribute("_toggle")
-                        child.BackgroundColor3 = tog and theme.Accent or theme.SectionBackground
-                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
-                    end
-                elseif child:IsA("TextBox") then
-                    child.BackgroundColor3 = theme.SectionBackground
-                    child.TextColor3 = theme.Text
-                end
-            end
+        if tbl.meta and tbl.meta.theme then
+            Window:SetTheme(tbl.meta.theme)
         end
-
-        -- refresh active notifications colors (if any)
-        for _, notif in ipairs(Window._notifications) do
-            if notif and notif.Parent then
-                local accentFrame = notif:FindFirstChildOfClass("Frame")
-                if accentFrame then
-                    accentFrame.BackgroundColor3 = theme.Accent
-                end
-                for _, c in ipairs(notif:GetChildren()) do
-                    if c:IsA("TextLabel") then
-                        c.TextColor3 = theme.Text
-                    elseif c:IsA("Frame") and c ~= accentFrame then
-                        c.BackgroundColor3 = theme.SectionBackground
-                    end
-                end
-                notif.BackgroundColor3 = theme.SectionBackground
-            end
-        end
+        return true
     end
 
-    -- Toggle UI methods
+    function Window:SaveConfig(path)
+        path = path or Window._autosave_path
+        local data = Window:ExportConfig()
+        -- include current theme
+        data.meta.theme = nil
+        for k, v in pairs(Themes) do
+            if v == theme then data.meta.theme = k; break end
+        end
+        local ok, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+        if not ok then return false, encoded end
+        return safeWrite(path, encoded)
+    end
+
+    function Window:LoadConfig(path)
+        path = path or Window._autosave_path
+        local exists = safeIsFile(path)
+        if not exists then return false, "file not found or isfile not available" end
+        local ok, raw = safeRead(path)
+        if not ok then return false, raw end
+        local ok2, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+        if not ok2 then return false, decoded end
+        return Window:ImportConfig(decoded)
+    end
+
+    function Window:SetAutoSave(enabled, path)
+        Window._autosave = enabled and true or false
+        if path then Window._autosave_path = path end
+    end
+
+    -- Toggle UI methods & key
     function Window:Hide()
         if not Window._uiVisible then return end
         Window._storedPosition = Main.Position
         tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
-        task.delay(0.18, function()
-            if ScreenGui then
-                ScreenGui.Enabled = false
-            end
-        end)
+        task.delay(0.18, function() if ScreenGui then ScreenGui.Enabled = false end end)
         Window._uiVisible = false
     end
-
     function Window:Show()
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
@@ -464,22 +457,10 @@ function Kour6anHub.CreateLib(title, themeName)
         tween(Main, {Position = target}, 0.18)
         Window._uiVisible = true
     end
+    function Window:ToggleUI() if Window._uiVisible then Window:Hide() else Window:Show() end end
+    function Window:SetToggleKey(keyEnum) if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then Window._toggleKey = keyEnum end end
 
-    function Window:ToggleUI()
-        if Window._uiVisible then
-            Window:Hide()
-        else
-            Window:Show()
-        end
-    end
-
-    function Window:SetToggleKey(keyEnum)
-        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
-            Window._toggleKey = keyEnum
-        end
-    end
-
-    -- default toggle listener (still active even when ScreenGui disabled)
+    -- default toggle listener
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -488,7 +469,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end)
 
-    -- small topbar toggle button
+    -- topbar toggle button
     local function createTopbarToggle()
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 32, 0, 28)
@@ -501,24 +482,16 @@ function Kour6anHub.CreateLib(title, themeName)
         btn.TextColor3 = theme.Text
         btn.AutoButtonColor = false
         btn.Parent = Topbar
-
         local corner = Instance.new("UICorner")
         corner.CornerRadius = UDim.new(0,6)
         corner.Parent = btn
-
-        btn.MouseEnter:Connect(function()
-            tween(btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
-        end)
-        btn.MouseLeave:Connect(function()
-            tween(btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
-        end)
-
-        btn.MouseButton1Click:Connect(function()
-            Window:ToggleUI()
-        end)
+        btn.MouseEnter:Connect(function() tween(btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08) end)
+        btn.MouseLeave:Connect(function() tween(btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08) end)
+        btn.MouseButton1Click:Connect(function() Window:ToggleUI() end)
     end
     createTopbarToggle()
 
+    -- Tab creation
     function Window:NewTab(tabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
@@ -530,26 +503,13 @@ function Kour6anHub.CreateLib(title, themeName)
         TabButton.AutoButtonColor = false
         TabButton.Parent = TabContainer
 
-        local TabButtonCorner = Instance.new("UICorner")
-        TabButtonCorner.CornerRadius = UDim.new(0, 6)
-        TabButtonCorner.Parent = TabButton
+        local TabButtonCorner = Instance.new("UICorner"); TabButtonCorner.CornerRadius = UDim.new(0, 6); TabButtonCorner.Parent = TabButton
+        local TabButtonPadding = Instance.new("UIPadding"); TabButtonPadding.PaddingTop = UDim.new(0, 8); TabButtonPadding.PaddingBottom = UDim.new(0, 8); TabButtonPadding.PaddingLeft = UDim.new(0, 10); TabButtonPadding.PaddingRight = UDim.new(0, 10); TabButtonPadding.Parent = TabButton
 
-        local TabButtonPadding = Instance.new("UIPadding")
-        TabButtonPadding.PaddingTop = UDim.new(0, 8)
-        TabButtonPadding.PaddingBottom = UDim.new(0, 8)
-        TabButtonPadding.PaddingLeft = UDim.new(0, 10)
-        TabButtonPadding.PaddingRight = UDim.new(0, 10)
-        TabButtonPadding.Parent = TabButton
-
-        TabButton.MouseEnter:Connect(function()
-            tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
-        end)
+        TabButton.MouseEnter:Connect(function() tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1) end)
         TabButton.MouseLeave:Connect(function()
-            if TabButton:GetAttribute("active") then
-                tween(TabButton, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
-            else
-                tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
-            end
+            if TabButton:GetAttribute("active") then tween(TabButton, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
+            else tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -20, 0, 40)}, 0.1) end
         end)
 
         local TabFrame = Instance.new("ScrollingFrame")
@@ -560,16 +520,8 @@ function Kour6anHub.CreateLib(title, themeName)
         TabFrame.Visible = false
         TabFrame.Parent = Content
 
-        local TabLayout = Instance.new("UIListLayout")
-        TabLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        TabLayout.Padding = UDim.new(0, 10)
-        TabLayout.Parent = TabFrame
-
-        local TabFramePadding = Instance.new("UIPadding")
-        TabFramePadding.PaddingTop = UDim.new(0, 8)
-        TabFramePadding.PaddingLeft = UDim.new(0, 8)
-        TabFramePadding.PaddingRight = UDim.new(0, 8)
-        TabFramePadding.Parent = TabFrame
+        local TabLayout = Instance.new("UIListLayout"); TabLayout.SortOrder = Enum.SortOrder.LayoutOrder; TabLayout.Padding = UDim.new(0, 10); TabLayout.Parent = TabFrame
+        local TabFramePadding = Instance.new("UIPadding"); TabFramePadding.PaddingTop = UDim.new(0, 8); TabFramePadding.PaddingLeft = UDim.new(0, 8); TabFramePadding.PaddingRight = UDim.new(0, 8); TabFramePadding.Parent = TabFrame
 
         TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
             local s = TabLayout.AbsoluteContentSize
@@ -591,6 +543,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
+        -- Tab API
         local TabObj = {}
 
         function TabObj:NewSection(sectionName)
@@ -601,21 +554,9 @@ function Kour6anHub.CreateLib(title, themeName)
             Section.AutomaticSize = Enum.AutomaticSize.Y
             Section.Name = "_section"
 
-            local SectionCorner = Instance.new("UICorner")
-            SectionCorner.CornerRadius = UDim.new(0, 6)
-            SectionCorner.Parent = Section
-
-            local SectionLayout = Instance.new("UIListLayout")
-            SectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            SectionLayout.Padding = UDim.new(0, 6)
-            SectionLayout.Parent = Section
-
-            local SectionPadding = Instance.new("UIPadding")
-            SectionPadding.PaddingTop = UDim.new(0, 8)
-            SectionPadding.PaddingBottom = UDim.new(0, 8)
-            SectionPadding.PaddingLeft = UDim.new(0, 8)
-            SectionPadding.PaddingRight = UDim.new(0, 8)
-            SectionPadding.Parent = Section
+            local SectionCorner = Instance.new("UICorner"); SectionCorner.CornerRadius = UDim.new(0, 6); SectionCorner.Parent = Section
+            local SectionLayout = Instance.new("UIListLayout"); SectionLayout.SortOrder = Enum.SortOrder.LayoutOrder; SectionLayout.Padding = UDim.new(0, 6); SectionLayout.Parent = Section
+            local SectionPadding = Instance.new("UIPadding"); SectionPadding.PaddingTop = UDim.new(0, 8); SectionPadding.PaddingBottom = UDim.new(0, 8); SectionPadding.PaddingLeft = UDim.new(0, 8); SectionPadding.PaddingRight = UDim.new(0, 8); SectionPadding.Parent = Section
 
             local Label = Instance.new("TextLabel")
             Label.Text = sectionName
@@ -670,16 +611,10 @@ function Kour6anHub.CreateLib(title, themeName)
                 Btn.AutoButtonColor = false
                 Btn.Parent = Section
 
-                local BtnCorner = Instance.new("UICorner")
-                BtnCorner.CornerRadius = UDim.new(0, 6)
-                BtnCorner.Parent = Btn
+                local BtnCorner = Instance.new("UICorner"); BtnCorner.CornerRadius = UDim.new(0, 6); BtnCorner.Parent = Btn
 
-                Btn.MouseEnter:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
-                end)
-                Btn.MouseLeave:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
-                end)
+                Btn.MouseEnter:Connect(function() tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08) end)
+                Btn.MouseLeave:Connect(function() tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.08) end)
 
                 Btn.MouseButton1Click:Connect(function()
                     tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
@@ -702,49 +637,43 @@ function Kour6anHub.CreateLib(title, themeName)
                 ToggleBtn.AutoButtonColor = false
                 ToggleBtn.Parent = Section
 
-                local ToggleCorner = Instance.new("UICorner")
-                ToggleCorner.CornerRadius = UDim.new(0, 6)
-                ToggleCorner.Parent = ToggleBtn
+                local ToggleCorner = Instance.new("UICorner"); ToggleCorner.CornerRadius = UDim.new(0, 6); ToggleCorner.Parent = ToggleBtn
 
                 local state = false
                 ToggleBtn:SetAttribute("_isToggleState", true)
                 ToggleBtn:SetAttribute("_toggle", state)
 
-                ToggleBtn.MouseEnter:Connect(function()
-                    tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
-                end)
-                ToggleBtn.MouseLeave:Connect(function()
-                    local bg = state and theme.Accent or theme.SectionBackground
-                    tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
-                end)
+                ToggleBtn.MouseEnter:Connect(function() tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08) end)
+                ToggleBtn.MouseLeave:Connect(function() local bg = state and theme.Accent or theme.SectionBackground; tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.08) end)
+
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. "." .. tostring(text))
+
+                local function applyState(v)
+                    state = not not v
+                    ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
+                    ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
+                    ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
+                    ToggleBtn:SetAttribute("_toggle", state)
+                    if Window._autosave then pcall(function() Window:SaveConfig() end) end
+                end
 
                 ToggleBtn.MouseButton1Click:Connect(function()
                     tween(ToggleBtn, {Size = UDim2.new(1, -8, 0, 32)}, 0.08)
                     task.wait(0.09)
                     tween(ToggleBtn, {Size = UDim2.new(1, 0, 0, 34)}, 0.12)
-                    state = not state
-                    ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
-                    if state then
-                        ToggleBtn.BackgroundColor3 = theme.Accent
-                        ToggleBtn.TextColor3 = Color3.fromRGB(255,255,255)
-                    else
-                        ToggleBtn.BackgroundColor3 = theme.SectionBackground
-                        ToggleBtn.TextColor3 = theme.Text
-                    end
-                    ToggleBtn:SetAttribute("_toggle", state)
+                    applyState(not state)
                     pcall(function() callback(state) end)
                 end)
+
+                registerControl(id, "toggle",
+                    function() return state end,
+                    function(v) applyState(v) end
+                )
 
                 return {
                     Button = ToggleBtn,
                     GetState = function() return state end,
-                    SetState = function(v)
-                        state = not not v
-                        ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
-                        ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
-                        ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
-                        ToggleBtn:SetAttribute("_toggle", state)
-                    end
+                    SetState = function(v) applyState(v) end
                 }
             end
 
@@ -774,41 +703,31 @@ function Kour6anHub.CreateLib(title, themeName)
                 bar.Position = UDim2.new(0, 0, 0, 24)
                 bar.BackgroundColor3 = theme.SectionBackground
                 bar.Parent = wrap
-
-                local barCorner = Instance.new("UICorner")
-                barCorner.CornerRadius = UDim.new(0, 8)
-                barCorner.Parent = bar
+                Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 8)
 
                 local fill = Instance.new("Frame")
                 local initialRel = 0
-                if max > min then
-                    initialRel = (default - min) / (max - min)
-                end
+                if max > min then initialRel = (default - min) / (max - min) end
                 fill.Size = UDim2.new(initialRel, 0, 1, 0)
                 fill.BackgroundColor3 = theme.Accent
                 fill.Parent = bar
-
-                local fillCorner = Instance.new("UICorner")
-                fillCorner.CornerRadius = UDim.new(0, 8)
-                fillCorner.Parent = fill
+                Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 8)
 
                 local knob = Instance.new("Frame")
                 knob.Size = UDim2.new(0, 14, 0, 14)
                 knob.Position = UDim2.new(fill.Size.X.Scale, -7, 0.5, -7)
                 knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
                 knob.Parent = bar
-                local knobCorner = Instance.new("UICorner")
-                knobCorner.CornerRadius = UDim.new(0, 8)
-                knobCorner.Parent = knob
+                Instance.new("UICorner", knob).CornerRadius = UDim.new(0, 8)
 
                 local dragging = false
-
                 local function updateByX(x)
                     local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
                     fill.Size = UDim2.new(rel, 0, 1, 0)
                     knob.Position = UDim2.new(rel, -7, 0.5, -7)
                     local val = min + (max - min) * rel
                     pcall(function() callback(val) end)
+                    if Window._autosave then pcall(function() Window:SaveConfig() end) end
                 end
 
                 bar.InputBegan:Connect(function(inp)
@@ -818,29 +737,38 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
                 bar.InputEnded:Connect(function(inp)
-                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = false
-                    end
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
                 end)
                 UserInputService.InputChanged:Connect(function(inp)
-                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                        updateByX(inp.Position.X)
-                    end
+                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then updateByX(inp.Position.X) end
                 end)
+
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. "." .. tostring(text))
+
+                registerControl(id, "slider",
+                    function()
+                        local rel = fill.Size.X.Scale
+                        return min + (max - min) * rel
+                    end,
+                    function(v)
+                        local rel = 0
+                        if max > min then rel = math.clamp((v - min) / (max - min), 0, 1) end
+                        fill.Size = UDim2.new(rel, 0, 1, 0)
+                        knob.Position = UDim2.new(rel, -7, 0.5, -7)
+                        if callback then pcall(callback, min + (max - min) * rel) end
+                    end
+                )
 
                 return {
                     Set = function(v)
                         local rel = 0
-                        if max > min then
-                            rel = math.clamp((v - min) / (max - min), 0, 1)
-                        end
+                        if max > min then rel = math.clamp((v - min) / (max - min), 0, 1) end
                         fill.Size = UDim2.new(rel, 0, 1, 0)
                         knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                        pcall(function() callback(min + (max - min) * rel) end)
+                        if callback then pcall(callback, min + (max - min) * rel) end
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
                     end,
-                    Get = function()
-                        return min + (max - min) * fill.Size.X.Scale
-                    end
+                    Get = function() return min + (max - min) * fill.Size.X.Scale end
                 }
             end
 
@@ -860,16 +788,19 @@ function Kour6anHub.CreateLib(title, themeName)
                 box.Font = Enum.Font.Gotham
                 box.TextSize = 14
                 box.Parent = wrap
+                Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
 
-                local boxCorner = Instance.new("UICorner")
-                boxCorner.CornerRadius = UDim.new(0, 6)
-                boxCorner.Parent = box
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. ".textbox." .. tostring(placeholder or "box"))
 
                 box.FocusLost:Connect(function(enterPressed)
-                    if enterPressed and callback then
-                        pcall(function() callback(box.Text) end)
-                    end
+                    if enterPressed and callback then pcall(function() callback(box.Text) end) end
+                    if Window._autosave then pcall(function() Window:SaveConfig() end) end
                 end)
+
+                registerControl(id, "textbox",
+                    function() return box.Text end,
+                    function(v) box.Text = tostring(v or "") end
+                )
 
                 return {
                     TextBox = box,
@@ -895,10 +826,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 btn.TextSize = 13
                 btn.AutoButtonColor = false
                 btn.Parent = wrap
-
-                local btnCorner = Instance.new("UICorner")
-                btnCorner.CornerRadius = UDim.new(0, 6)
-                btnCorner.Parent = btn
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 
                 local capturing = false
                 local boundKey = defaultKey
@@ -921,19 +849,37 @@ function Kour6anHub.CreateLib(title, themeName)
                             boundKey = input.KeyCode
                             capturing = false
                             updateDisplay()
+                            if Window._autosave then pcall(function() Window:SaveConfig() end) end
                         end
                         return
                     end
-
                     if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
                         pcall(function() callback() end)
                     end
                 end)
 
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. "." .. tostring(desc or "keybind"))
+
+                registerControl(id, "keybind",
+                    function() return boundKey and tostring(boundKey) or nil end,
+                    function(v)
+                        if type(v) == "string" then
+                            if v == "None" or v == nil then boundKey = nil else boundKey = Enum.KeyCode[v] end
+                        elseif typeof(v) == "EnumItem" then
+                            boundKey = v
+                        end
+                        updateDisplay()
+                    end
+                )
+
                 return {
                     Button = btn,
                     GetKey = function() return boundKey end,
-                    SetKey = function(k) boundKey = k; updateDisplay() end,
+                    SetKey = function(k)
+                        boundKey = k
+                        updateDisplay()
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
+                    end,
                     Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
                 }
             end
@@ -958,30 +904,21 @@ function Kour6anHub.CreateLib(title, themeName)
                 btn.TextSize = 13
                 btn.AutoButtonColor = false
                 btn.Parent = wrap
-
-                local btnCorner = Instance.new("UICorner")
-                btnCorner.CornerRadius = UDim.new(0, 6)
-                btnCorner.Parent = btn
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
 
                 local function closeOptions()
-                    if optionsFrame and optionsFrame.Parent then
-                        optionsFrame:Destroy()
-                    end
+                    if optionsFrame and optionsFrame.Parent then optionsFrame:Destroy() end
                     optionsFrame = nil
                     open = false
-                    if Window._currentOpenDropdown == closeOptions then
-                        Window._currentOpenDropdown = nil
-                    end
+                    if Window._currentOpenDropdown == closeOptions then Window._currentOpenDropdown = nil end
                 end
 
                 local function openOptions()
-                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-                        pcall(function() Window._currentOpenDropdown() end)
-                    end
+                    -- auto-close other embedded dropdowns globally
+                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then pcall(function() Window._currentOpenDropdown() end) end
 
                     closeOptions()
                     open = true
-
                     optionsFrame = Instance.new("Frame")
                     optionsFrame.Name = "_dropdownOptions"
                     optionsFrame.BackgroundColor3 = theme.SectionBackground
@@ -989,10 +926,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, #options * 28))
                     optionsFrame.AnchorPoint = Vector2.new(0,0)
                     optionsFrame.Parent = Section
-
-                    local corner = Instance.new("UICorner")
-                    corner.CornerRadius = UDim.new(0, 6)
-                    corner.Parent = optionsFrame
+                    Instance.new("UICorner", optionsFrame).CornerRadius = UDim.new(0, 6)
 
                     local list = Instance.new("ScrollingFrame")
                     list.BackgroundTransparency = 1
@@ -1001,10 +935,9 @@ function Kour6anHub.CreateLib(title, themeName)
                     list.ScrollBarThickness = 6
                     list.Parent = optionsFrame
 
-                    local layout = Instance.new("UIListLayout")
+                    local layout = Instance.new("UIListLayout", list)
                     layout.SortOrder = Enum.SortOrder.LayoutOrder
                     layout.Padding = UDim.new(0, 4)
-                    layout.Parent = list
 
                     for i, opt in ipairs(options) do
                         local optBtn = Instance.new("TextButton")
@@ -1017,22 +950,16 @@ function Kour6anHub.CreateLib(title, themeName)
                         optBtn.TextColor3 = theme.Text
                         optBtn.AutoButtonColor = false
                         optBtn.Parent = list
+                        Instance.new("UICorner", optBtn).CornerRadius = UDim.new(0, 6)
 
-                        local oc = Instance.new("UICorner")
-                        oc.CornerRadius = UDim.new(0, 6)
-                        oc.Parent = optBtn
-
-                        optBtn.MouseEnter:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
-                        end)
-                        optBtn.MouseLeave:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-                        end)
+                        optBtn.MouseEnter:Connect(function() tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08) end)
+                        optBtn.MouseLeave:Connect(function() tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08) end)
                         optBtn.MouseButton1Click:Connect(function()
                             current = opt
                             btn.Text = (name and name .. ": " or "") .. tostring(current)
                             pcall(function() callback(current) end)
                             closeOptions()
+                            if Window._autosave then pcall(function() Window:SaveConfig() end) end
                         end)
                     end
 
@@ -1047,34 +974,26 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closeOptions()
-                    else
-                        openOptions()
-                    end
+                    if open then closeOptions() else openOptions() end
                 end)
+
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. "." .. tostring(name))
+
+                registerControl(id, "dropdown",
+                    function() return current end,
+                    function(v)
+                        current = v
+                        btn.Text = (name and name .. ": " or "") .. tostring(current)
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
+                        if callback then pcall(callback, current) end
+                    end
+                )
 
                 return {
                     Button = btn,
                     Get = function() return current end,
-                    Set = function(v)
-                        current = v
-                        btn.Text = (name and name .. ": " or "") .. tostring(current)
-                        pcall(function() callback(current) end)
-                    end,
-                    Refresh = function(newOptions)
-                        options = newOptions or {}
-                        current = options[1] or nil
-                        btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-                        if optionsFrame then
-                            optionsFrame:Destroy()
-                            optionsFrame = nil
-                            open = false
-                            if Window._currentOpenDropdown == closeOptions then
-                                Window._currentOpenDropdown = nil
-                            end
-                        end
-                    end
+                    Set = function(v) current = v; btn.Text = (name and name .. ": " or "") .. tostring(current) end,
+                    Refresh = function(newOptions) options = newOptions or {}; current = options[1] or nil; btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]") end
                 }
             end
 
@@ -1102,17 +1021,13 @@ function Kour6anHub.CreateLib(title, themeName)
                 preview.Position = UDim2.new(1, -28, 0.5, -12)
                 preview.BackgroundColor3 = cur
                 preview.Parent = wrap
-                local pc = Instance.new("UICorner")
-                pc.CornerRadius = UDim.new(0, 6)
-                pc.Parent = preview
+                Instance.new("UICorner", preview).CornerRadius = UDim.new(0, 6)
 
                 local popup = nil
                 local open = false
 
                 local function closePopup()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                    end
+                    if popup and popup.Parent then popup:Destroy() end
                     popup = nil
                     open = false
                 end
@@ -1134,18 +1049,14 @@ function Kour6anHub.CreateLib(title, themeName)
                     bar.Position = UDim2.new(0, 8, 0, y + 18)
                     bar.BackgroundColor3 = theme.SectionBackground
                     bar.Parent = parent
-                    local barCorner = Instance.new("UICorner")
-                    barCorner.CornerRadius = UDim.new(0, 6)
-                    barCorner.Parent = bar
+                    Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 6)
 
                     local fill = Instance.new("Frame")
                     local rel = initial or 0
                     fill.Size = UDim2.new(rel, 0, 1, 0)
                     fill.BackgroundColor3 = theme.Accent
                     fill.Parent = bar
-                    local fillCorner = Instance.new("UICorner")
-                    fillCorner.CornerRadius = UDim.new(0, 6)
-                    fillCorner.Parent = fill
+                    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 6)
 
                     local knob = Instance.new("Frame")
                     knob.Size = UDim2.new(0, 10, 0, 10)
@@ -1153,9 +1064,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     knob.AnchorPoint = Vector2.new(0, 0)
                     knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
                     knob.Parent = bar
-                    local kc = Instance.new("UICorner")
-                    kc.CornerRadius = UDim.new(0, 6)
-                    kc.Parent = knob
+                    Instance.new("UICorner", knob).CornerRadius = UDim.new(0, 6)
 
                     local dragging = false
                     bar.InputBegan:Connect(function(inp)
@@ -1167,11 +1076,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             pcall(function() onChange(relx) end)
                         end
                     end)
-                    bar.InputEnded:Connect(function(inp)
-                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                            dragging = false
-                        end
-                    end)
+                    bar.InputEnded:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
                     UserInputService.InputChanged:Connect(function(inp)
                         if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
                             local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
@@ -1182,28 +1087,20 @@ function Kour6anHub.CreateLib(title, themeName)
                     end)
 
                     return {
-                        Set = function(v)
-                            local rv = math.clamp(v, 0, 1)
-                            fill.Size = UDim2.new(rv, 0, 1, 0)
-                            knob.Position = UDim2.new(rv, -5, 0, 0)
-                        end,
+                        Set = function(v) local rv = math.clamp(v, 0, 1); fill.Size = UDim2.new(rv, 0, 1, 0); knob.Position = UDim2.new(rv, -5, 0, 0) end,
                         Get = function() return fill.Size.X.Scale end
                     }
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closePopup()
-                        return
-                    end
+                    if open then closePopup(); return end
                     open = true
                     popup = Instance.new("Frame")
                     popup.Size = UDim2.new(0, 260, 0, 160)
                     popup.BackgroundColor3 = theme.SectionBackground
                     popup.BorderSizePixel = 0
                     popup.Parent = ScreenGui
-                    local corner = Instance.new("UICorner", popup)
-                    corner.CornerRadius = UDim.new(0, 8)
+                    Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 8)
 
                     local ap = wrap.AbsolutePosition
                     popup.Position = UDim2.new(0, ap.X + 160, 0, ap.Y + 20)
@@ -1224,28 +1121,21 @@ function Kour6anHub.CreateLib(title, themeName)
                     previewBox.Position = UDim2.new(1, -44, 0, 8)
                     previewBox.BackgroundColor3 = cur
                     previewBox.Parent = popup
-                    local pc2 = Instance.new("UICorner", previewBox)
-                    pc2.CornerRadius = UDim.new(0, 6)
+                    Instance.new("UICorner", previewBox).CornerRadius = UDim.new(0, 6)
 
                     local r,g,b = cur.R, cur.G, cur.B
 
                     local rSlider = createSlider(popup, 34, "R", r, function(rel)
-                        r = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        r = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
                     end)
                     local gSlider = createSlider(popup, 66, "G", g, function(rel)
-                        g = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        g = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
                     end)
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
-                        b = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        b = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
+                        if Window._autosave then pcall(function() Window:SaveConfig() end) end
                     end)
 
                     local conn
@@ -1263,25 +1153,30 @@ function Kour6anHub.CreateLib(title, themeName)
                     end)
                 end)
 
+                local id = sanitizeKey(TabButton.Text .. "." .. sectionName .. "." .. tostring(name))
+                registerControl(id, "color",
+                    function() return {cur.R, cur.G, cur.B} end,
+                    function(v)
+                        if type(v) == "table" then
+                            local ok, c = pcall(function() return Color3.new(v[1] or v.R, v[2] or v.G, v[3] or v.B) end)
+                            if ok and c then cur = c; preview.BackgroundColor3 = cur; if Window._autosave then pcall(function() Window:SaveConfig() end) end end
+                        elseif typeof(v) == "Color3" then
+                            cur = v; preview.BackgroundColor3 = cur; if Window._autosave then pcall(function() Window:SaveConfig() end) end
+                        end
+                    end
+                )
+
                 return {
                     Button = btn,
                     Get = function() return cur end,
                     Set = function(c)
-                        if type(c) == "table" then
-                            local ok = pcall(function()
-                                cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
-                            end)
-                            if not ok then return end
-                        elseif typeof(c) == "Color3" then
-                            cur = c
-                        end
-                        preview.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        if typeof(c) == "Color3" then cur = c; preview.BackgroundColor3 = cur end
+                        if type(c) == "table" then local ok, cc = pcall(function() return Color3.new(c[1], c[2], c[3]) end) if ok then cur = cc; preview.BackgroundColor3 = cur end end
                     end
                 }
             end
 
-            -- === Compatibility aliases for Kavo-style API names ===
+            -- Compat aliases
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
@@ -1292,10 +1187,84 @@ function Kour6anHub.CreateLib(title, themeName)
         return TabObj
     end
 
-    -- apply initial theme (ensures proper contrast)
+    -- theme helpers
+    function Window:GetThemeList()
+        local out = {}
+        for k,_ in pairs(Themes) do table.insert(out, k) end
+        table.sort(out)
+        return out
+    end
+
+    function Window:SetTheme(newThemeName)
+        if not newThemeName then return end
+        local foundTheme = nil
+        if Themes[newThemeName] then foundTheme = Themes[newThemeName]
+        else
+            local lowerTarget = string.lower(tostring(newThemeName))
+            for k,v in pairs(Themes) do
+                if string.lower(k) == lowerTarget then foundTheme = v; break end
+            end
+        end
+        if not foundTheme then return end
+        theme = foundTheme
+
+        Main.BackgroundColor3 = theme.Background
+        Topbar.BackgroundColor3 = theme.SectionBackground
+        Title.TextColor3 = theme.Text
+        TabContainer.BackgroundColor3 = theme.TabBackground
+
+        for _, entry in ipairs(Tabs) do
+            local btn = entry.Button
+            local frame = entry.Frame
+            local active = btn:GetAttribute("active")
+            btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
+            btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
+
+            for _, child in ipairs(frame:GetDescendants()) do
+                if child:IsA("Frame") then
+                    if child.Name == "_section" then child.BackgroundColor3 = theme.SectionBackground end
+                elseif child:IsA("TextLabel") then
+                    if child.Font == Enum.Font.GothamBold then child.TextColor3 = theme.SubText else child.TextColor3 = theme.Text end
+                elseif child:IsA("TextButton") then
+                    child.TextColor3 = theme.Text
+                    if not child:GetAttribute("_isToggleState") then child.BackgroundColor3 = theme.SectionBackground
+                    else
+                        local tog = child:GetAttribute("_toggle")
+                        child.BackgroundColor3 = tog and theme.Accent or theme.SectionBackground
+                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
+                    end
+                elseif child:IsA("TextBox") then
+                    child.BackgroundColor3 = theme.SectionBackground
+                    child.TextColor3 = theme.Text
+                end
+            end
+        end
+
+        -- update existing notifications
+        for _, notif in ipairs(Window._notifications) do
+            if notif and notif.Parent then
+                for _, c in ipairs(notif:GetChildren()) do
+                    if c:IsA("TextLabel") then c.TextColor3 = theme.Text end
+                end
+                local accentFrame = notif:FindFirstChildOfClass("Frame")
+                if accentFrame then accentFrame.BackgroundColor3 = theme.Accent end
+                notif.BackgroundColor3 = theme.SectionBackground
+            end
+        end
+    end
+
+    -- apply initial theme
     Window:SetTheme(themeName or "LightTheme")
+
+    -- convenience show/hide
+    function Window:HideUI() Window:Hide() end
+    function Window:ShowUI() Window:Show() end
+    function Window:ToggleVisible() Window:ToggleUI() end
 
     return Window
 end
+
+-- compatibility global names
+Kour6anHub = Kour6anHub
 
 return Kour6anHub
