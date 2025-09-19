@@ -1,6 +1,6 @@
--- Kour6anHub UI Library (Modern Rebuild)
+-- Kour6anHub UI Library (Modern Rebuild v4)
+-- Hover pop animation + Press feedback on Buttons, Toggles, and Tab Buttons
 -- Minimal API (Window → Tab → Section → Button/Toggle)
--- Kavo-compatible: CreateLib, NewTab, NewSection, NewButton, NewToggle
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -8,6 +8,7 @@ Kour6anHub.__index = Kour6anHub
 -- Services
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
 -- Utility: Dragging
 local function makeDraggable(frame, dragHandle)
@@ -36,7 +37,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (extendable)
+-- Themes
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -55,6 +56,11 @@ local Themes = {
         Accent = Color3.fromRGB(0,120,255)
     }
 }
+
+-- Tween helper
+local function tween(obj, props, dur)
+    TweenService:Create(obj, TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+end
 
 -- Create window
 function Kour6anHub.CreateLib(title, themeName)
@@ -111,7 +117,15 @@ function Kour6anHub.CreateLib(title, themeName)
     local TabList = Instance.new("UIListLayout")
     TabList.SortOrder = Enum.SortOrder.LayoutOrder
     TabList.Padding = UDim.new(0, 5)
+    TabList.HorizontalAlignment = Enum.HorizontalAlignment.Center
     TabList.Parent = TabContainer
+
+    local TabPadding = Instance.new("UIPadding")
+    TabPadding.PaddingTop = UDim.new(0, 8)
+    TabPadding.PaddingBottom = UDim.new(0, 8)
+    TabPadding.PaddingLeft = UDim.new(0, 10)
+    TabPadding.PaddingRight = UDim.new(0, 10)
+    TabPadding.Parent = TabContainer
 
     local Content = Instance.new("Frame")
     Content.Size = UDim2.new(1, -160, 1, -50)
@@ -126,16 +140,29 @@ function Kour6anHub.CreateLib(title, themeName)
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
         TabButton.Size = UDim2.new(1, -10, 0, 35)
-        TabButton.Position = UDim2.new(0, 5, 0, 0)
         TabButton.BackgroundColor3 = theme.SectionBackground
         TabButton.TextColor3 = theme.Text
         TabButton.Font = Enum.Font.Gotham
         TabButton.TextSize = 14
+        TabButton.AutoButtonColor = false
         TabButton.Parent = TabContainer
 
         local TabButtonCorner = Instance.new("UICorner")
         TabButtonCorner.CornerRadius = UDim.new(0, 6)
         TabButtonCorner.Parent = TabButton
+
+        -- Hover + press animations
+        TabButton.MouseEnter:Connect(function()
+            tween(TabButton, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, -5, 0, 37)}, 0.1)
+        end)
+        TabButton.MouseLeave:Connect(function()
+            tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -10, 0, 35)}, 0.1)
+        end)
+        TabButton.MouseButton1Click:Connect(function()
+            tween(TabButton, {Size = UDim2.new(1, -12, 0, 34)}, 0.1)
+            task.wait(0.1)
+            tween(TabButton, {Size = UDim2.new(1, -10, 0, 35)}, 0.1)
+        end)
 
         local TabFrame = Instance.new("ScrollingFrame")
         TabFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -216,13 +243,19 @@ function Kour6anHub.CreateLib(title, themeName)
                 BtnCorner.CornerRadius = UDim.new(0, 6)
                 BtnCorner.Parent = Btn
 
+                -- Hover
                 Btn.MouseEnter:Connect(function()
-                    Btn.BackgroundColor3 = theme.TabBackground
+                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -5, 0, 32)}, 0.1)
                 end)
                 Btn.MouseLeave:Connect(function()
-                    Btn.BackgroundColor3 = theme.Background
+                    tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, 0, 0, 30)}, 0.1)
                 end)
+
+                -- Click
                 Btn.MouseButton1Click:Connect(function()
+                    tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 28)}, 0.1)
+                    task.wait(0.1)
+                    tween(Btn, {BackgroundColor3 = theme.Background, Size = UDim2.new(1, 0, 0, 30)}, 0.1)
                     pcall(callback)
                 end)
             end
@@ -243,7 +276,23 @@ function Kour6anHub.CreateLib(title, themeName)
                 ToggleCorner.Parent = Toggle
 
                 local state = false
+
+                -- Hover
+                Toggle.MouseEnter:Connect(function()
+                    tween(Toggle, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -5, 0, 32)}, 0.1)
+                end)
+                Toggle.MouseLeave:Connect(function()
+                    local bg = state and theme.Accent or theme.Background
+                    tween(Toggle, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 30)}, 0.1)
+                end)
+
                 Toggle.MouseButton1Click:Connect(function()
+                    -- Press
+                    tween(Toggle, {Size = UDim2.new(1, -8, 0, 28)}, 0.1)
+                    task.wait(0.1)
+                    tween(Toggle, {Size = UDim2.new(1, 0, 0, 30)}, 0.1)
+
+                    -- State change
                     state = not state
                     Toggle.Text = text .. (state and " [ON]" or " [OFF]")
                     if state then
