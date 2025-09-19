@@ -1,5 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
+-- v4 → fixes for colorpicker popup z-order/positioning + notifications + themes
 -- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
 -- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
@@ -7,6 +7,7 @@ local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
 
 -- Services
+local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
@@ -19,7 +20,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging (original style)
+-- Utility: Dragging
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
@@ -48,7 +49,7 @@ local function makeDraggable(frame, dragHandle)
     end)
 end
 
--- Themes (added Neon, Ocean, Forest, Crimson, Sky)
+-- Themes
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -82,7 +83,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = { -- alias / single entry for synapse-like palette
+    ["Synapse"] = {
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -98,8 +99,6 @@ local Themes = {
         SubText = Color3.fromRGB(160,200,170),
         Accent = Color3.fromRGB(70,200,120)
     },
-
-    -- ----- ADDED THEMES -----
     ["Neon"] = {
         Background = Color3.fromRGB(15, 15, 25),
         TabBackground = Color3.fromRGB(25, 25, 40),
@@ -108,7 +107,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 160, 200),
         Accent = Color3.fromRGB(0, 255, 200)
     },
-
     ["Ocean"] = {
         Background = Color3.fromRGB(5, 20, 35),
         TabBackground = Color3.fromRGB(10, 30, 50),
@@ -117,7 +115,6 @@ local Themes = {
         SubText = Color3.fromRGB(140, 170, 190),
         Accent = Color3.fromRGB(0, 140, 255)
     },
-
     ["Forest"] = {
         Background = Color3.fromRGB(10, 20, 12),
         TabBackground = Color3.fromRGB(16, 30, 18),
@@ -126,7 +123,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 180, 160),
         Accent = Color3.fromRGB(70, 200, 100)
     },
-
     ["Crimson"] = {
         Background = Color3.fromRGB(25, 10, 15),
         TabBackground = Color3.fromRGB(35, 15, 20),
@@ -135,7 +131,6 @@ local Themes = {
         SubText = Color3.fromRGB(180, 150, 160),
         Accent = Color3.fromRGB(220, 40, 80)
     },
-
     ["Sky"] = {
         Background = Color3.fromRGB(230, 245, 255),
         TabBackground = Color3.fromRGB(210, 235, 250),
@@ -150,14 +145,24 @@ local Themes = {
 function Kour6anHub.CreateLib(title, themeName)
     local theme = Themes[themeName] or Themes["LightTheme"]
 
-    -- ScreenGui (replace if exists)
+    -- ScreenGui (destroy old)
     local ScreenGui = CoreGui:FindFirstChild("Kour6anHub")
     if ScreenGui then ScreenGui:Destroy() end
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Kour6anHub"
-    ScreenGui.Parent = CoreGui
 
-    -- Main frame
+    -- prefer PlayerGui when available to avoid CoreGui permission issues
+    local player = Players.LocalPlayer
+    if player and player:FindFirstChild("PlayerGui") then
+        ScreenGui.Parent = player:FindFirstChild("PlayerGui")
+    else
+        ScreenGui.Parent = CoreGui
+    end
+
+    -- make popup overlays render above by using Global ZIndexBehavior
+    pcall(function() ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global end)
+
+    -- Main
     local Main = Instance.new("Frame")
     Main.Size = UDim2.new(0, 600, 0, 400)
     Main.Position = UDim2.new(0.5, -300, 0.5, -200)
@@ -192,7 +197,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     makeDraggable(Main, Topbar)
 
-    -- Tab container (left)
+    -- Tab container
     local TabContainer = Instance.new("Frame")
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
     TabContainer.Position = UDim2.new(0, 0, 0, 40)
@@ -216,7 +221,7 @@ function Kour6anHub.CreateLib(title, themeName)
     TabPadding.PaddingRight = UDim.new(0, 10)
     TabPadding.Parent = TabContainer
 
-    -- Content area (right)
+    -- Content area
     local Content = Instance.new("Frame")
     Content.Size = UDim2.new(1, -160, 1, -40)
     Content.Position = UDim2.new(0, 160, 0, 40)
@@ -228,25 +233,17 @@ function Kour6anHub.CreateLib(title, themeName)
     local Window = {}
     Window.ScreenGui = ScreenGui
     Window.Main = Main
-    -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
-    -- UI toggle state and key
+    -- UI toggle internals
     Window._uiVisible = true
     Window._toggleKey = Enum.KeyCode.RightControl
     Window._storedPosition = Main.Position
 
     -- Notification internals
-    Window._notifications = {}         -- list of notification frames
-    Window._notifConfig = {
-        width = 300,
-        height = 64,
-        spacing = 8,
-        margin = 16,
-        defaultDuration = 4
-    }
+    Window._notifications = {}
+    Window._notifConfig = { width = 300, height = 64, spacing = 8, margin = 16, defaultDuration = 4 }
 
-    -- create notification holder (bottom-right)
     local function createNotificationHolder()
         local holder = Instance.new("Frame")
         holder.Name = "_NotificationHolder"
@@ -257,21 +254,16 @@ function Kour6anHub.CreateLib(title, themeName)
         holder.Parent = ScreenGui
         return holder
     end
-
     Window._notificationHolder = createNotificationHolder()
 
-    -- helper to reposition all notifications (stack bottom-up)
     local function repositionNotifications()
         for i, notif in ipairs(Window._notifications) do
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
             local finalPos = UDim2.new(0, 0, 1, targetY)
-            pcall(function()
-                tween(notif, {Position = finalPos}, 0.18)
-            end)
+            pcall(function() tween(notif, {Position = finalPos}, 0.18) end)
         end
     end
 
-    -- add a notification
     function Window:Notify(titleText, bodyText, duration)
         duration = duration or Window._notifConfig.defaultDuration
         local width = Window._notifConfig.width
@@ -290,6 +282,7 @@ function Kour6anHub.CreateLib(title, themeName)
         corner.Parent = notif
 
         local accent = Instance.new("Frame")
+        accent.Name = "_accent"
         accent.Size = UDim2.new(0, 6, 1, 0)
         accent.Position = UDim2.new(0, 0, 0, 0)
         accent.BackgroundColor3 = theme.Accent
@@ -324,7 +317,12 @@ function Kour6anHub.CreateLib(title, themeName)
         body.TextWrapped = true
         body.Parent = notif
 
-        -- slide-in & stack
+        -- place on top
+        notif.ZIndex = 80
+        for _, c in ipairs(notif:GetDescendants()) do
+            if c:IsA("GuiObject") then c.ZIndex = 80 end
+        end
+
         table.insert(Window._notifications, 1, notif)
         repositionNotifications()
 
@@ -348,40 +346,27 @@ function Kour6anHub.CreateLib(title, themeName)
             end)
             task.wait(0.18)
             for i, v in ipairs(Window._notifications) do
-                if v == notif then
-                    table.remove(Window._notifications, i)
-                    break
-                end
+                if v == notif then table.remove(Window._notifications, i); break end
             end
             if notif and notif.Parent then notif:Destroy() end
             repositionNotifications()
         end)
     end
 
-    -- get available theme names
+    -- theme helpers
     function Window:GetThemeList()
         local out = {}
-        for k,_ in pairs(Themes) do
-            table.insert(out, k)
-        end
+        for k,_ in pairs(Themes) do table.insert(out, k) end
         table.sort(out)
         return out
     end
 
-    -- runtime theme switcher (case-insensitive)
     function Window:SetTheme(newThemeName)
         if not newThemeName then return end
         local foundTheme = nil
-        if Themes[newThemeName] then
-            foundTheme = Themes[newThemeName]
-        else
-            local lowerTarget = string.lower(tostring(newThemeName))
-            for k,v in pairs(Themes) do
-                if string.lower(k) == lowerTarget then
-                    foundTheme = v
-                    break
-                end
-            end
+        if Themes[newThemeName] then foundTheme = Themes[newThemeName] else
+            local lt = string.lower(tostring(newThemeName))
+            for k,v in pairs(Themes) do if string.lower(k) == lt then foundTheme = v; break end end
         end
         if not foundTheme then return end
         theme = foundTheme
@@ -400,15 +385,9 @@ function Kour6anHub.CreateLib(title, themeName)
 
             for _, child in ipairs(frame:GetDescendants()) do
                 if child:IsA("Frame") then
-                    if child.Name == "_section" then
-                        child.BackgroundColor3 = theme.SectionBackground
-                    end
+                    if child.Name == "_section" then child.BackgroundColor3 = theme.SectionBackground end
                 elseif child:IsA("TextLabel") then
-                    if child.Font == Enum.Font.GothamBold then
-                        child.TextColor3 = theme.SubText
-                    else
-                        child.TextColor3 = theme.Text
-                    end
+                    if child.Font == Enum.Font.GothamBold then child.TextColor3 = theme.SubText else child.TextColor3 = theme.Text end
                 elseif child:IsA("TextButton") then
                     child.TextColor3 = theme.Text
                     if not child:GetAttribute("_isToggleState") then
@@ -425,38 +404,28 @@ function Kour6anHub.CreateLib(title, themeName)
             end
         end
 
-        -- refresh active notifications colors (if any)
+        -- update notifications color
         for _, notif in ipairs(Window._notifications) do
             if notif and notif.Parent then
-                local accentFrame = notif:FindFirstChildOfClass("Frame")
-                if accentFrame then
-                    accentFrame.BackgroundColor3 = theme.Accent
-                end
+                local acc = notif:FindFirstChild("_accent")
+                if acc then acc.BackgroundColor3 = theme.Accent end
                 for _, c in ipairs(notif:GetChildren()) do
-                    if c:IsA("TextLabel") then
-                        c.TextColor3 = theme.Text
-                    elseif c:IsA("Frame") and c ~= accentFrame then
-                        c.BackgroundColor3 = theme.SectionBackground
-                    end
+                    if c:IsA("TextLabel") then c.TextColor3 = theme.Text
+                    elseif c:IsA("Frame") and c ~= acc then c.BackgroundColor3 = theme.SectionBackground end
                 end
                 notif.BackgroundColor3 = theme.SectionBackground
             end
         end
     end
 
-    -- Toggle UI methods
+    -- UI toggle methods
     function Window:Hide()
         if not Window._uiVisible then return end
         Window._storedPosition = Main.Position
         tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
-        task.delay(0.18, function()
-            if ScreenGui then
-                ScreenGui.Enabled = false
-            end
-        end)
+        task.delay(0.18, function() if ScreenGui then ScreenGui.Enabled = false end end)
         Window._uiVisible = false
     end
-
     function Window:Show()
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
@@ -464,22 +433,9 @@ function Kour6anHub.CreateLib(title, themeName)
         tween(Main, {Position = target}, 0.18)
         Window._uiVisible = true
     end
+    function Window:ToggleUI() if Window._uiVisible then Window:Hide() else Window:Show() end end
+    function Window:SetToggleKey(keyEnum) if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then Window._toggleKey = keyEnum end end
 
-    function Window:ToggleUI()
-        if Window._uiVisible then
-            Window:Hide()
-        else
-            Window:Show()
-        end
-    end
-
-    function Window:SetToggleKey(keyEnum)
-        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
-            Window._toggleKey = keyEnum
-        end
-    end
-
-    -- default toggle listener (still active even when ScreenGui disabled)
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -488,7 +444,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end)
 
-    -- small topbar toggle button
+    -- topbar toggle button
     local function createTopbarToggle()
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 32, 0, 28)
@@ -513,12 +469,11 @@ function Kour6anHub.CreateLib(title, themeName)
             tween(btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
         end)
 
-        btn.MouseButton1Click:Connect(function()
-            Window:ToggleUI()
-        end)
+        btn.MouseButton1Click:Connect(function() Window:ToggleUI() end)
     end
     createTopbarToggle()
 
+    -- NewTab implementation
     function Window:NewTab(tabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
@@ -781,9 +736,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local fill = Instance.new("Frame")
                 local initialRel = 0
-                if max > min then
-                    initialRel = (default - min) / (max - min)
-                end
+                if max > min then initialRel = (default - min) / (max - min) end
                 fill.Size = UDim2.new(initialRel, 0, 1, 0)
                 fill.BackgroundColor3 = theme.Accent
                 fill.Parent = bar
@@ -802,7 +755,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 knobCorner.Parent = knob
 
                 local dragging = false
-
                 local function updateByX(x)
                     local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
                     fill.Size = UDim2.new(rel, 0, 1, 0)
@@ -818,29 +770,21 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
                 bar.InputEnded:Connect(function(inp)
-                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = false
-                    end
+                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
                 end)
                 UserInputService.InputChanged:Connect(function(inp)
-                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                        updateByX(inp.Position.X)
-                    end
+                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then updateByX(inp.Position.X) end
                 end)
 
                 return {
                     Set = function(v)
                         local rel = 0
-                        if max > min then
-                            rel = math.clamp((v - min) / (max - min), 0, 1)
-                        end
+                        if max > min then rel = math.clamp((v - min) / (max - min), 0, 1) end
                         fill.Size = UDim2.new(rel, 0, 1, 0)
                         knob.Position = UDim2.new(rel, -7, 0.5, -7)
                         pcall(function() callback(min + (max - min) * rel) end)
                     end,
-                    Get = function()
-                        return min + (max - min) * fill.Size.X.Scale
-                    end
+                    Get = function() return min + (max - min) * fill.Size.X.Scale end
                 }
             end
 
@@ -866,9 +810,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 boxCorner.Parent = box
 
                 box.FocusLost:Connect(function(enterPressed)
-                    if enterPressed and callback then
-                        pcall(function() callback(box.Text) end)
-                    end
+                    if enterPressed and callback then pcall(function() callback(box.Text) end) end
                 end)
 
                 return {
@@ -902,7 +844,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local capturing = false
                 local boundKey = defaultKey
-
                 local function updateDisplay()
                     local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
                     btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
@@ -924,7 +865,6 @@ function Kour6anHub.CreateLib(title, themeName)
                         end
                         return
                     end
-
                     if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
                         pcall(function() callback() end)
                     end
@@ -938,6 +878,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 }
             end
 
+            -- Embedded Dropdown (below the button inside the section)
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
                 local current = options[1] or nil
@@ -964,14 +905,10 @@ function Kour6anHub.CreateLib(title, themeName)
                 btnCorner.Parent = btn
 
                 local function closeOptions()
-                    if optionsFrame and optionsFrame.Parent then
-                        optionsFrame:Destroy()
-                    end
+                    if optionsFrame and optionsFrame.Parent then optionsFrame:Destroy() end
                     optionsFrame = nil
                     open = false
-                    if Window._currentOpenDropdown == closeOptions then
-                        Window._currentOpenDropdown = nil
-                    end
+                    if Window._currentOpenDropdown == closeOptions then Window._currentOpenDropdown = nil end
                 end
 
                 local function openOptions()
@@ -1022,12 +959,8 @@ function Kour6anHub.CreateLib(title, themeName)
                         oc.CornerRadius = UDim.new(0, 6)
                         oc.Parent = optBtn
 
-                        optBtn.MouseEnter:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
-                        end)
-                        optBtn.MouseLeave:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-                        end)
+                        optBtn.MouseEnter:Connect(function() tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08) end)
+                        optBtn.MouseLeave:Connect(function() tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08) end)
                         optBtn.MouseButton1Click:Connect(function()
                             current = opt
                             btn.Text = (name and name .. ": " or "") .. tostring(current)
@@ -1047,37 +980,23 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closeOptions()
-                    else
-                        openOptions()
-                    end
+                    if open then closeOptions() else openOptions() end
                 end)
 
                 return {
                     Button = btn,
                     Get = function() return current end,
-                    Set = function(v)
-                        current = v
-                        btn.Text = (name and name .. ": " or "") .. tostring(current)
-                        pcall(function() callback(current) end)
-                    end,
+                    Set = function(v) current = v; btn.Text = (name and name .. ": " or "") .. tostring(current); pcall(function() callback(current) end) end,
                     Refresh = function(newOptions)
                         options = newOptions or {}
                         current = options[1] or nil
                         btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-                        if optionsFrame then
-                            optionsFrame:Destroy()
-                            optionsFrame = nil
-                            open = false
-                            if Window._currentOpenDropdown == closeOptions then
-                                Window._currentOpenDropdown = nil
-                            end
-                        end
+                        if optionsFrame then optionsFrame:Destroy(); optionsFrame = nil; open = false; if Window._currentOpenDropdown == closeOptions then Window._currentOpenDropdown = nil end end
                     end
                 }
             end
 
+            -- Colorpicker (floating popup) — patched for robust z-order & positioning
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
                 local cur = defaultColor
@@ -1110,9 +1029,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 local open = false
 
                 local function closePopup()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                    end
+                    if popup and popup.Parent then popup:Destroy() end
                     popup = nil
                     open = false
                 end
@@ -1167,11 +1084,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             pcall(function() onChange(relx) end)
                         end
                     end)
-                    bar.InputEnded:Connect(function(inp)
-                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                            dragging = false
-                        end
-                    end)
+                    bar.InputEnded:Connect(function(inp) if inp.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
                     UserInputService.InputChanged:Connect(function(inp)
                         if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
                             local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
@@ -1192,22 +1105,30 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closePopup()
-                        return
-                    end
+                    if open then closePopup(); return end
                     open = true
+
+                    -- Close any other open embedded dropdowns/popups
+                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closePopup then
+                        pcall(function() Window._currentOpenDropdown() end)
+                    end
+
                     popup = Instance.new("Frame")
                     popup.Size = UDim2.new(0, 260, 0, 160)
                     popup.BackgroundColor3 = theme.SectionBackground
                     popup.BorderSizePixel = 0
+                    -- ensure popup is parented to top-level ScreenGui for consistent z-order
                     popup.Parent = ScreenGui
+
+                    -- ensure popup not clipped and on top
+                    popup.ClipsDescendants = false
+                    popup.ZIndex = 100
+                    popup.Name = "_ColorPopup"
+
                     local corner = Instance.new("UICorner", popup)
                     corner.CornerRadius = UDim.new(0, 8)
 
-                    local ap = wrap.AbsolutePosition
-                    popup.Position = UDim2.new(0, ap.X + 160, 0, ap.Y + 20)
-
+                    -- build content
                     local title = Instance.new("TextLabel")
                     title.Text = name or "Color"
                     title.Size = UDim2.new(1, -12, 0, 18)
@@ -1230,24 +1151,43 @@ function Kour6anHub.CreateLib(title, themeName)
                     local r,g,b = cur.R, cur.G, cur.B
 
                     local rSlider = createSlider(popup, 34, "R", r, function(rel)
-                        r = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        r = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
                     end)
                     local gSlider = createSlider(popup, 66, "G", g, function(rel)
-                        g = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        g = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
                     end)
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
-                        b = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        b = rel; cur = Color3.new(r,g,b); previewBox.BackgroundColor3 = cur; pcall(function() callback(cur) end)
                     end)
 
+                    -- ensure children ZIndex so it is above other UI
+                    for _, c in ipairs(popup:GetDescendants()) do
+                        if c:IsA("GuiObject") then c.ZIndex = 100 end
+                    end
+
+                    -- compute position robustly after the popup has a real AbsoluteSize
+                    spawn(function()
+                        task.wait() -- wait a frame to ensure AbsolutePosition/Size are valid
+                        -- preferred place is to the right of the button; if not enough room, place left
+                        local ap = wrap.AbsolutePosition
+                        local aw = wrap.AbsoluteSize.X
+                        local popupW = popup.AbsoluteSize.X
+                        local popupH = popup.AbsoluteSize.Y
+                        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800,600)
+
+                        local desiredX = ap.X + aw + 8
+                        if desiredX + popupW > viewport.X - 8 then
+                            desiredX = math.max(8, ap.X - popupW - 8)
+                        end
+                        local desiredY = math.clamp(ap.Y, 8, viewport.Y - popupH - 8)
+
+                        -- apply
+                        popup.Position = UDim2.fromOffset(math.floor(desiredX), math.floor(desiredY))
+                        -- ensure it's visible and above everything
+                        popup.Visible = true
+                    end)
+
+                    -- close on click outside
                     local conn
                     conn = UserInputService.InputBegan:Connect(function(input, gp)
                         if gp then return end
@@ -1261,6 +1201,9 @@ function Kour6anHub.CreateLib(title, themeName)
                             end
                         end
                     end)
+
+                    -- mark as current open popup
+                    Window._currentOpenDropdown = closePopup
                 end)
 
                 return {
@@ -1268,20 +1211,16 @@ function Kour6anHub.CreateLib(title, themeName)
                     Get = function() return cur end,
                     Set = function(c)
                         if type(c) == "table" then
-                            local ok = pcall(function()
-                                cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
-                            end)
+                            local ok = pcall(function() cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B) end)
                             if not ok then return end
-                        elseif typeof(c) == "Color3" then
-                            cur = c
-                        end
+                        elseif typeof(c) == "Color3" then cur = c end
                         preview.BackgroundColor3 = cur
                         pcall(function() callback(cur) end)
                     end
                 }
             end
 
-            -- === Compatibility aliases for Kavo-style API names ===
+            -- aliases
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
@@ -1292,7 +1231,7 @@ function Kour6anHub.CreateLib(title, themeName)
         return TabObj
     end
 
-    -- apply initial theme (ensures proper contrast)
+    -- initial theme
     Window:SetTheme(themeName or "LightTheme")
 
     return Window
