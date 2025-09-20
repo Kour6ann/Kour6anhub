@@ -58,10 +58,9 @@ local function Promise(executor)
     return self
 end
 
-function SaveManager.new(library)
+function SaveManager.new()
     local self = setmetatable({}, SaveManager)
-    self.Library = library
-    self.Folder = "Kour6anHubSettings"
+    self.Folder = "Kour6anHubSettings" -- Default folder
     self.Options = {}
     self.Ignore = {}
     self.Parser = {
@@ -127,14 +126,28 @@ function SaveManager.new(library)
             end,
         }
     }
-    self:BuildFolderTree()
     return self
 end
 
+-- Setup methods following Fluent pattern
+function SaveManager:SetLibrary(library)
+    self.Library = library
+end
+
+function SaveManager:SetFolder(folder)
+    self.Folder = folder
+    self:BuildFolderTree()
+end
+
 function SaveManager:SetIgnoreIndexes(list)
+    self.Ignore = {}
     for _, key in ipairs(list) do
         self.Ignore[key] = true
     end
+end
+
+function SaveManager:IgnoreThemeSettings()
+    -- Optional: Add logic to ignore theme-related settings if needed
 end
 
 function SaveManager:Save(name)
@@ -146,7 +159,7 @@ function SaveManager:Save(name)
     
     for idx, option in pairs(self.Options) do
         if self.Ignore[idx] then 
-            -- Skip ignored options (using explicit check instead of continue)
+            -- Skip ignored options
         else
             if self.Parser[option.Type] then
                 table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
