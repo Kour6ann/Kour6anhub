@@ -1,7 +1,5 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
--- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
--- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
+-- v5 → Added Topbar Close & Minimize buttons, removed old ToggleUI button
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -19,7 +17,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging (original style)
+-- Utility: Dragging
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
