@@ -284,6 +284,7 @@ function SaveManager:LoadAutoload()
 end
 
 function SaveManager:BuildConfigSection(tab)
+    -- Create a section first
     local section = tab:NewSection("Configuration")
     
     -- Config name input
