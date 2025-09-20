@@ -1,5 +1,7 @@
 -- Kour6anHub UI Library (Kavo-compatible API) 
--- v5 → Added Topbar Close & Minimize buttons, removed old ToggleUI button
+-- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
+-- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
+-- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -17,7 +19,7 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Utility: Dragging
+-- Utility: Dragging (original style)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
@@ -44,6 +46,15 @@ local function makeDraggable(frame, dragHandle)
             )
         end
     end)
+end
+
+-- Safe callback helper to prevent errors in user code from breaking the UI
+local function safeCallback(callback, ...)
+    local success, result = pcall(callback, ...)
+    if not success then
+        warn("[Kour6anHub] Callback Error: " .. tostring(result))
+    end
+    return success, result
 end
 
 -- Themes (added Neon, Ocean, Forest, Crimson, Sky)
@@ -179,7 +190,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     local Title = Instance.new("TextLabel")
     Title.Text = title or "Kour6anHub"
-    Title.Size = UDim2.new(1, -90, 1, 0)
+    Title.Size = UDim2.new(1, -10, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
     Title.TextColor3 = theme.Text
@@ -190,50 +201,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
     makeDraggable(Main, Topbar)
 
-    -- Close button (✕)
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 32, 0, 28)
-    CloseBtn.Position = UDim2.new(1, -38, 0, 6)
-    CloseBtn.BackgroundColor3 = theme.TabBackground
-    CloseBtn.Text = "✕"
-    CloseBtn.Font = Enum.Font.GothamBold
-    CloseBtn.TextSize = 14
-    CloseBtn.TextColor3 = theme.Text
-    CloseBtn.AutoButtonColor = false
-    CloseBtn.Parent = Topbar
-    local cc = Instance.new("UICorner", CloseBtn)
-    cc.CornerRadius = UDim.new(0, 6)
-
-    CloseBtn.MouseButton1Click:Connect(function()
-        ScreenGui:Destroy()
-    end)
-
-    -- Minimize button (–)
-    local MinBtn = Instance.new("TextButton")
-    MinBtn.Size = UDim2.new(0, 32, 0, 28)
-    MinBtn.Position = UDim2.new(1, -74, 0, 6)
-    MinBtn.BackgroundColor3 = theme.TabBackground
-    MinBtn.Text = "–"
-    MinBtn.Font = Enum.Font.GothamBold
-    MinBtn.TextSize = 14
-    MinBtn.TextColor3 = theme.Text
-    MinBtn.AutoButtonColor = false
-    MinBtn.Parent = Topbar
-    local mc = Instance.new("UICorner", MinBtn)
-    mc.CornerRadius = UDim.new(0, 6)
-
-    local minimized = false
-    local oldSize = Main.Size
-    MinBtn.MouseButton1Click:Connect(function()
-        if minimized then
-            tween(Main, {Size = oldSize}, 0.18)
-            minimized = false
-        else
-            oldSize = Main.Size
-            tween(Main, {Size = UDim2.new(oldSize.X.Scale, oldSize.X.Offset, 0, 40)}, 0.18)
-            minimized = true
-        end
-    end)
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
@@ -273,10 +240,12 @@ function Kour6anHub.CreateLib(title, themeName)
     -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
-    -- UI toggle state and key
+    -- UI states
     Window._uiVisible = true
+    Window._uiMinimized = false
     Window._toggleKey = Enum.KeyCode.RightControl
     Window._storedPosition = Main.Position
+    Window._storedSize = Main.Size
 
     -- Notification internals
     Window._notifications = {}         -- list of notification frames
@@ -502,6 +471,12 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:Show()
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
+        
+        -- If UI was minimized, restore it before showing
+        if Window._uiMinimized then
+            Window:Restore()
+        end
+        
         local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
         tween(Main, {Position = target}, 0.18)
         Window._uiVisible = true
@@ -521,6 +496,72 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
+    -- Minimize/Restore methods
+    function Window:Minimize()
+        if self._uiMinimized then return end
+        
+        -- Store the current size before minimizing
+        self._storedSize = self.Main.Size
+        self._uiMinimized = true
+        
+        -- Collapse to just the topbar
+        tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
+        
+        -- Hide the tab container and content
+        tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)
+        
+        -- Make tab buttons invisible
+        for _, tab in ipairs(Tabs) do
+            tab.Button.Visible = false
+        end
+    end
+
+    function Window:Restore()
+        if not self._uiMinimized then return end
+        
+        self._uiMinimized = false
+        
+        -- Restore to original size
+        tween(self.Main, {Size = self._storedSize}, 0.18)
+        
+        -- Show the tab container and content
+        tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)  -- Content is always transparent
+        
+        -- Make tab buttons visible again
+        for _, tab in ipairs(Tabs) do
+            tab.Button.Visible = true
+        end
+    end
+
+    function Window:ToggleMinimize()
+        if self._uiMinimized then
+            self:Restore()
+        else
+            self:Minimize()
+        end
+    end
+
+    -- Destroy method
+    function Window:Destroy()
+        -- Disconnect the global toggle key listener
+        if self._inputConn then
+            self._inputConn:Disconnect()
+            self._inputConn = nil
+        end
+
+        -- Destroy the entire ScreenGui and everything in it
+        if self.ScreenGui then
+            self.ScreenGui:Destroy()
+            self.ScreenGui = nil
+        end
+
+        -- Clear tables to help with garbage collection
+        self._notifications = {}
+        Tabs = {}
+    end
+
     -- default toggle listener (still active even when ScreenGui disabled)
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -529,37 +570,67 @@ function Kour6anHub.CreateLib(title, themeName)
             Window:ToggleUI()
         end
     end)
+    Window._inputConn = inputConn  -- Store the toggle key connection
 
-    -- small topbar toggle button
-    local function createTopbarToggle()
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 32, 0, 28)
-        btn.Position = UDim2.new(1, -40, 0, 6)
-        btn.AnchorPoint = Vector2.new(0,0)
-        btn.BackgroundColor3 = theme.TabBackground
-        btn.Text = "▣"
-        btn.Font = Enum.Font.Gotham
-        btn.TextSize = 14
-        btn.TextColor3 = theme.Text
-        btn.AutoButtonColor = false
-        btn.Parent = Topbar
+    -- Create minimize and close buttons in topbar
+    local function createTopbarButtons()
+        -- Minimize button (-)
+        local minBtn = Instance.new("TextButton")
+        minBtn.Size = UDim2.new(0, 32, 0, 28)
+        minBtn.Position = UDim2.new(1, -80, 0, 6)
+        minBtn.AnchorPoint = Vector2.new(0,0)
+        minBtn.BackgroundColor3 = theme.TabBackground
+        minBtn.Text = "—"
+        minBtn.Font = Enum.Font.Gotham
+        minBtn.TextSize = 14
+        minBtn.TextColor3 = theme.Text
+        minBtn.AutoButtonColor = false
+        minBtn.Parent = Topbar
 
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0,6)
-        corner.Parent = btn
+        local minCorner = Instance.new("UICorner")
+        minCorner.CornerRadius = UDim.new(0,6)
+        minCorner.Parent = minBtn
 
-        btn.MouseEnter:Connect(function()
-            tween(btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
+        minBtn.MouseEnter:Connect(function()
+            tween(minBtn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
         end)
-        btn.MouseLeave:Connect(function()
-            tween(btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
+        minBtn.MouseLeave:Connect(function()
+            tween(minBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
         end)
 
-        btn.MouseButton1Click:Connect(function()
-            Window:ToggleUI()
+        minBtn.MouseButton1Click:Connect(function()
+            Window:ToggleMinimize()
+        end)
+
+        -- Close button (X)
+        local closeBtn = Instance.new("TextButton")
+        closeBtn.Size = UDim2.new(0, 32, 0, 28)
+        closeBtn.Position = UDim2.new(1, -40, 0, 6)
+        closeBtn.AnchorPoint = Vector2.new(0,0)
+        closeBtn.BackgroundColor3 = theme.TabBackground
+        closeBtn.Text = "X"
+        closeBtn.Font = Enum.Font.Gotham
+        closeBtn.TextSize = 14
+        closeBtn.TextColor3 = theme.Text
+        closeBtn.AutoButtonColor = false
+        closeBtn.Parent = Topbar
+
+        local closeCorner = Instance.new("UICorner")
+        closeCorner.CornerRadius = UDim.new(0,6)
+        closeCorner.Parent = closeBtn
+
+        closeBtn.MouseEnter:Connect(function()
+            tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(255, 50, 50), TextColor3 = Color3.fromRGB(255,255,255), Size = UDim2.new(0, 34, 0, 30)}, 0.08)
+        end)
+        closeBtn.MouseLeave:Connect(function()
+            tween(closeBtn, {BackgroundColor3 = theme.TabBackground, TextColor3 = theme.Text, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
+        end)
+
+        closeBtn.MouseButton1Click:Connect(function()
+            Window:Destroy()
         end)
     end
-    createTopbarToggle()
+    createTopbarButtons()
 
     function Window:NewTab(tabName)
         local TabButton = Instance.new("TextButton")
@@ -727,7 +798,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
                     task.wait(0.09)
                     tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.12)
-                    pcall(function() callback() end)
+                    safeCallback(callback)
                 end)
 
                 return Btn
@@ -774,7 +845,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         ToggleBtn.TextColor3 = theme.Text
                     end
                     ToggleBtn:SetAttribute("_toggle", state)
-                    pcall(function() callback(state) end)
+                    safeCallback(callback, state)
                 end)
 
                 return {
@@ -850,7 +921,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     fill.Size = UDim2.new(rel, 0, 1, 0)
                     knob.Position = UDim2.new(rel, -7, 0.5, -7)
                     local val = min + (max - min) * rel
-                    pcall(function() callback(val) end)
+                    safeCallback(callback, val)
                 end
 
                 bar.InputBegan:Connect(function(inp)
@@ -878,7 +949,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         end
                         fill.Size = UDim2.new(rel, 0, 1, 0)
                         knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                        pcall(function() callback(min + (max - min) * rel) end)
+                        safeCallback(callback, min + (max - min) * rel)
                     end,
                     Get = function()
                         return min + (max - min) * fill.Size.X.Scale
@@ -909,7 +980,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 box.FocusLost:Connect(function(enterPressed)
                     if enterPressed and callback then
-                        pcall(function() callback(box.Text) end)
+                        safeCallback(callback, box.Text)
                     end
                 end)
 
@@ -968,7 +1039,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
 
                     if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
-                        pcall(function() callback() end)
+                        safeCallback(callback)
                     end
                 end)
 
@@ -1073,7 +1144,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         optBtn.MouseButton1Click:Connect(function()
                             current = opt
                             btn.Text = (name and name .. ": " or "") .. tostring(current)
-                            pcall(function() callback(current) end)
+                            safeCallback(callback, current)
                             closeOptions()
                         end)
                     end
@@ -1102,7 +1173,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     Set = function(v)
                         current = v
                         btn.Text = (name and name .. ": " or "") .. tostring(current)
-                        pcall(function() callback(current) end)
+                        safeCallback(callback, current)
                     end,
                     Refresh = function(newOptions)
                         options = newOptions or {}
@@ -1206,7 +1277,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
                             fill.Size = UDim2.new(relx, 0, 1, 0)
                             knob.Position = UDim2.new(relx, -5, 0, 0)
-                            pcall(function() onChange(relx) end)
+                            safeCallback(onChange, relx)
                         end
                     end)
                     bar.InputEnded:Connect(function(inp)
@@ -1219,7 +1290,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
                             fill.Size = UDim2.new(relx, 0, 1, 0)
                             knob.Position = UDim2.new(relx, -5, 0, 0)
-                            pcall(function() onChange(relx) end)
+                            safeCallback(onChange, relx)
                         end
                     end)
 
@@ -1275,19 +1346,19 @@ function Kour6anHub.CreateLib(title, themeName)
                         r = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        safeCallback(callback, cur)
                     end)
                     local gSlider = createSlider(popup, 66, "G", g, function(rel)
                         g = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        safeCallback(callback, cur)
                     end)
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
-                        b = rel
-                        cur = Color3.new(r, g, b)
-                        previewBox.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        b = rerl
+                        cur = Color3.new (r, g, b)
+                                                previewBox.BackgroundColor3 = cur
+                        safeCallback(callback, cur)
                     end)
 
                     local conn
@@ -1318,7 +1389,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             cur = c
                         end
                         preview.BackgroundColor3 = cur
-                        pcall(function() callback(cur) end)
+                        safeCallback(callback, cur)
                     end
                 }
             end
@@ -1336,60 +1407,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
     -- apply initial theme (ensures proper contrast)
     Window:SetTheme(themeName or "LightTheme")
-
-    local Window = {}
-    Window.ScreenGui = ScreenGui
-    Window.Main = Main
-    Window.Topbar = Topbar
-    Window.Title = Title
-    Window.CloseBtn = CloseBtn
-    Window.MinBtn = MinBtn
-
-    -- Keep ToggleUI keybind
-    Window._uiVisible = true
-    Window._toggleKey = Enum.KeyCode.RightControl
-    Window._storedPosition = Main.Position
-
-    function Window:Hide()
-        if not Window._uiVisible then return end
-        Window._storedPosition = Main.Position
-        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
-        task.delay(0.18, function()
-            if ScreenGui then
-                ScreenGui.Enabled = false
-            end
-        end)
-        Window._uiVisible = false
-    end
-
-    function Window:Show()
-        if Window._uiVisible then return end
-        if ScreenGui then ScreenGui.Enabled = true end
-        local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
-        tween(Main, {Position = target}, 0.18)
-        Window._uiVisible = true
-    end
-
-    function Window:ToggleUI()
-        if Window._uiVisible then
-            Window:Hide()
-        else
-            Window:Show()
-        end
-    end
-
-    function Window:SetToggleKey(keyEnum)
-        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
-            Window._toggleKey = keyEnum
-        end
-    end
-
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Window._toggleKey then
-            Window:ToggleUI()
-        end
-    end)
 
     return Window
 end
