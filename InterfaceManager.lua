@@ -78,9 +78,34 @@ function InterfaceManager:LoadSettings()
         end)
         
         if success and type(data) == "table" then
+            -- Only update settings that exist and are of the correct type
             for k, v in pairs(data) do
                 if self.Settings[k] ~= nil then
-                    self.Settings[k] = v
+                    if type(v) == type(self.Settings[k]) then
+                        self.Settings[k] = v
+                    else
+                        -- Convert to correct type if possible
+                        if k == "Theme" and type(v) == "table" then
+                            -- If theme is a table, try to extract a string value
+                            if v.Name then
+                                self.Settings[k] = tostring(v.Name)
+                            else
+                                -- Fallback to default
+                                self.Settings[k] = "DarkTheme"
+                            end
+                        elseif k == "ToggleKey" and type(v) == "table" then
+                            -- If toggle key is a table, try to extract a string value
+                            if v.Name then
+                                self.Settings[k] = tostring(v.Name)
+                            else
+                                -- Fallback to default
+                                self.Settings[k] = "RightControl"
+                            end
+                        else
+                            -- For other cases, just use the default
+                            self.Settings[k] = self.Settings[k] -- Keep default
+                        end
+                    end
                 end
             end
         end
@@ -96,28 +121,32 @@ end
 function InterfaceManager:ApplySettings()
     if self.Library then
         -- Ensure Theme is a string
-        if type(self.Settings.Theme) == "string" then
+        if type(self.Settings.Theme) ~= "string" then
+            self.Settings.Theme = "DarkTheme"
+        end
+        
+        -- Apply theme
+        local success, err = pcall(function()
             self.Library:SetTheme(self.Settings.Theme)
-        else
-            -- Fallback to default theme if invalid
+        end)
+        
+        if not success then
+            -- If theme setting is invalid, reset to default
             self.Settings.Theme = "DarkTheme"
             self.Library:SetTheme("DarkTheme")
             self:SaveSettings()
         end
         
         -- Safe keycode application with fallback
-        if type(self.Settings.ToggleKey) == "string" then
-            local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
-            if keyCode then
-                self.Library:SetToggleKey(keyCode)
-            else
-                -- Fallback to default key if saved key is invalid
-                self.Settings.ToggleKey = "RightControl"
-                self.Library:SetToggleKey(Enum.KeyCode.RightControl)
-                self:SaveSettings()
-            end
+        if type(self.Settings.ToggleKey) ~= "string" then
+            self.Settings.ToggleKey = "RightControl"
+        end
+        
+        local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
+        if keyCode then
+            self.Library:SetToggleKey(keyCode)
         else
-            -- Fallback to default key if invalid type
+            -- Fallback to default key if saved key is invalid
             self.Settings.ToggleKey = "RightControl"
             self.Library:SetToggleKey(Enum.KeyCode.RightControl)
             self:SaveSettings()
