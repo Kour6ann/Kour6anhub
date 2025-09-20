@@ -1,94 +1,137 @@
--- InterfaceManager for Kour6anHub (saves position/size/minimized/theme/activeTab)
-local HttpService = game:GetService("HttpService")
 local InterfaceManager = {}
 InterfaceManager.__index = InterfaceManager
 
-function InterfaceManager.new(lib)
-    local self = setmetatable({
-        lib = lib,
-        folder = "Kour6anHubInterfaces"
-    }, InterfaceManager)
+-- Simple signal implementation
+local function Signal()
+    local self = {}
+    self._listeners = {}
+
+    function self:Connect(callback)
+        local connection = {
+            Connected = true,
+            Disconnect = function()
+                connection.Connected = false
+                for i, conn in ipairs(self._listeners) do
+                    if conn == connection then
+                        table.remove(self._listeners, i)
+                        break
+                    end
+                end
+            end
+        }
+        
+        connection.Callback = callback
+        table.insert(self._listeners, connection)
+        return connection
+    end
+
+    function self:Fire(...)
+        for _, connection in ipairs(self._listeners) do
+            if connection.Connected then
+                task.spawn(connection.Callback, ...)
+            end
+        end
+    end
+
+    function self:Wait()
+        local thread = coroutine.running()
+        local connection
+        connection = self:Connect(function(...)
+            connection:Disconnect()
+            coroutine.resume(thread, ...)
+        end)
+        return coroutine.yield()
+    end
+
     return self
 end
 
-local function can_write()
-    return type(writefile) == "function" and type(readfile) == "function"
-end
-
-local function safe_write(path, data)
-    if can_write() then
-        pcall(function() writefile(path, data) end)
-    else
-        _G.__Kour6anHubIfaces = _G.__Kour6anHubIfaces or {}
-        _G.__Kour6anHubIfaces[path] = data
-    end
-end
-
-local function safe_read(path)
-    if can_write() then
-        if pcall(function() return readfile(path) end) then
-            return readfile(path)
-        else return nil end
-    else
-        return _G.__Kour6anHubIfaces and _G.__Kour6anHubIfaces[path]
-    end
-end
-
-function InterfaceManager:Snapshot()
-    local w = self.lib and self.lib.Main
-    if not w then return nil end
-    local snap = {
-        position = tostring(w.Position),
-        size = tostring(w.Size),
-        minimized = (self.lib._uiMinimized == true),
-        activeTab = self.lib.ActiveTabName or "",
-        theme = self.lib.ThemeName or ""
+function InterfaceManager.new(library)
+    local self = setmetatable({}, InterfaceManager)
+    self.Library = library
+    self.Folder = "Kour6anHubSettings"
+    self.Settings = {
+        Theme = "DarkTheme",
+        ToggleKey = "RightControl"
     }
-    return snap
+    self.SettingsChanged = Signal()
+    self:LoadSettings()
+    self:ApplySettings()
+    return self
 end
 
-function InterfaceManager:SaveInterface(name)
-    name = name or ("interface_" .. tostring(os.time()))
-    local snap = self:Snapshot()
-    if not snap then return false end
-    local raw = HttpService:JSONEncode({meta={saved=os.time()}, snap=snap})
-    safe_write(self.folder .. "/" .. name .. ".json", raw)
-    return true
+function InterfaceManager:LoadSettings()
+    local path = self.Folder .. "/interface.json"
+    if isfile(path) then
+        local success, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(readfile(path))
+        end)
+        if success then
+            for k, v in pairs(data) do
+                self.Settings[k] = v
+            end
+        end
+    end
 end
 
-function InterfaceManager:LoadInterface(name)
-    local path = self.folder .. "/" .. name .. ".json"
-    local raw = safe_read(path)
-    if not raw then return false, "file not found" end
-    local ok, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not ok or not parsed or not parsed.snap then return false, "invalid file" end
-    local snap = parsed.snap
+function InterfaceManager:SaveSettings()
+    self:BuildFolderTree()
+    writefile(self.Folder .. "/interface.json", game:GetService("HttpService"):JSONEncode(self.Settings))
+    self.SettingsChanged:Fire(self.Settings)
+end
 
-    pcall(function()
-        if snap.position and self.lib.Main then
-            local f = loadstring("return " .. snap.position)
-            if f then self.lib.Main.Position = f() end
-        end
-        if snap.size and self.lib.Main then
-            local f2 = loadstring("return " .. snap.size)
-            if f2 then self.lib.Main.Size = f2() end
-        end
+function InterfaceManager:ApplySettings()
+    self.Library:SetTheme(self.Settings.Theme)
+    
+    -- Safe keycode application with fallback
+    local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
+    if keyCode then
+        self.Library:SetToggleKey(keyCode)
+    else
+        -- Fallback to default key if saved key is invalid
+        self.Settings.ToggleKey = "RightControl"
+        self.Library:SetToggleKey(Enum.KeyCode.RightControl)
+        self:SaveSettings()
+    end
+end
+
+function InterfaceManager:BuildFolderTree()
+    if not isfolder(self.Folder) then
+        makefolder(self.Folder)
+    end
+end
+
+function InterfaceManager:BuildInterfaceSection(section)
+    -- Theme selector
+    local themes = self.Library:GetThemeList()
+    local themeDropdown = section:NewDropdown("Theme", themes, function(selected)
+        self.Settings.Theme = selected
+        self.Library:SetTheme(selected)
+        self:SaveSettings()
     end)
-
-    if snap.minimized ~= nil then
-        if snap.minimized and type(self.lib.ToggleMinimize) == "function" then
-            pcall(function() self.lib:ToggleMinimize(true) end)
+    themeDropdown:Set(self.Settings.Theme)
+    
+    -- Toggle key selector
+    local keyNames = {}
+    for _, key in ipairs(Enum.KeyCode:GetEnumItems()) do
+        if key.Name ~= "Unknown" then
+            table.insert(keyNames, key.Name)
         end
     end
-
-    if snap.theme and self.lib.SetTheme then
-        pcall(function() self.lib:SetTheme(snap.theme) end)
-    end
-
-    if snap.activeTab and snap.activeTab ~= "" and self.lib.SelectTab then
-        pcall(function() self.lib:SelectTab(snap.activeTab) end)
-    end
-
-    return true
+    table.sort(keyNames)
+    
+    local keyDropdown = section:NewDropdown("Toggle Key", keyNames, function(selected)
+        self.Settings.ToggleKey = selected
+        self.Library:SetToggleKey(Enum.KeyCode[selected])
+        self:SaveSettings()
+    end)
+    keyDropdown:Set(self.Settings.ToggleKey)
+    
+    -- UI Scale slider
+    section:NewSlider("UI Scale", 0.5, 1.5, 1, function(value)
+        self.Library.Main.Size = UDim2.new(0, 600 * value, 0, 400 * value)
+        self.Library.Main.Position = UDim2.new(0.5, -300 * value, 0.5, -200 * value)
+    end)
 end
+
 return InterfaceManager
