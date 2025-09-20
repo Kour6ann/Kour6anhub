@@ -1355,7 +1355,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         safeCallback(callback, cur)
                     end)
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
-                        b = rerl
+                        b = rel
                         cur = Color3.new (r, g, b)
                                                 previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
