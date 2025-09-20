@@ -157,24 +157,6 @@ function Kour6anHub.CreateLib(title, themeName)
     ScreenGui.Name = "Kour6anHub"
     ScreenGui.Parent = CoreGui
 
-    -- optional: clicking on main UI should close any popups/dropdowns
-    ScreenGui.InputBegan:Connect(function(input, gp)
-        if gp then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            -- close embedded dropdown
-            if Kour6anHub._currentGlobalDropdown then
-                pcall(Kour6anHub._currentGlobalDropdown)
-                Kour6anHub._currentGlobalDropdown = nil
-            end
-            -- destroy any popup frames marked with _isPopup
-            for _, child in ipairs(ScreenGui:GetChildren()) do
-                if child:GetAttribute and child:GetAttribute("_isPopup") then
-                    pcall(function() child:Destroy() end)
-                end
-            end
-        end
-    end)
-
     -- Main frame
     local Main = Instance.new("Frame")
     Main.Size = UDim2.new(0, 600, 0, 400)
@@ -595,18 +577,6 @@ function Kour6anHub.CreateLib(title, themeName)
         end)
 
         TabButton.MouseButton1Click:Connect(function()
-            -- close any embedded dropdowns (global single-open logic)
-            if Window._currentOpenDropdown then
-                pcall(Window._currentOpenDropdown)
-                Window._currentOpenDropdown = nil
-            end
-            -- close any colorpicker popups (or any popup frames marked with _isPopup)
-            for _, child in ipairs(ScreenGui:GetChildren()) do
-                if child:GetAttribute and child:GetAttribute("_isPopup") then
-                    pcall(function() child:Destroy() end)
-                end
-            end
-
             for _, t in ipairs(Tabs) do
                 t.Button:SetAttribute("active", false)
                 t.Button.BackgroundColor3 = theme.SectionBackground
@@ -1138,15 +1108,10 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local popup = nil
                 local open = false
-                local conn = nil
 
                 local function closePopup()
-                    if conn then
-                        pcall(function() conn:Disconnect() end)
-                        conn = nil
-                    end
                     if popup and popup.Parent then
-                        pcall(function() popup:Destroy() end)
+                        popup:Destroy()
                     end
                     popup = nil
                     open = false
@@ -1237,12 +1202,8 @@ function Kour6anHub.CreateLib(title, themeName)
                     popup.BackgroundColor3 = theme.SectionBackground
                     popup.BorderSizePixel = 0
                     popup.Parent = ScreenGui
-                    Instance.new("UICorner", popup).CornerRadius = UDim.new(0, 8)
-
-                    -- mark the popup so global cleanup can find it
-                    if popup.SetAttribute then
-                        pcall(function() popup:SetAttribute("_isPopup", true) end)
-                    end
+                    local corner = Instance.new("UICorner", popup)
+                    corner.CornerRadius = UDim.new(0, 8)
 
                     local ap = wrap.AbsolutePosition
                     popup.Position = UDim2.new(0, ap.X + 160, 0, ap.Y + 20)
@@ -1263,7 +1224,8 @@ function Kour6anHub.CreateLib(title, themeName)
                     previewBox.Position = UDim2.new(1, -44, 0, 8)
                     previewBox.BackgroundColor3 = cur
                     previewBox.Parent = popup
-                    Instance.new("UICorner", previewBox).CornerRadius = UDim.new(0, 6)
+                    local pc2 = Instance.new("UICorner", previewBox)
+                    pc2.CornerRadius = UDim.new(0, 6)
 
                     local r,g,b = cur.R, cur.G, cur.B
 
@@ -1286,7 +1248,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         pcall(function() callback(cur) end)
                     end)
 
-                    -- outside-click listener for this popup
+                    local conn
                     conn = UserInputService.InputBegan:Connect(function(input, gp)
                         if gp then return end
                         if input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -1294,10 +1256,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
                             local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
                             if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
-                                if conn then
-                                    pcall(function() conn:Disconnect() end)
-                                    conn = nil
-                                end
+                                conn:Disconnect()
                                 closePopup()
                             end
                         end
