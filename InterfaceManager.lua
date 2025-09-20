@@ -46,18 +46,27 @@ local function Signal()
     return self
 end
 
-function InterfaceManager.new(library)
+function InterfaceManager.new()
     local self = setmetatable({}, InterfaceManager)
-    self.Library = library
-    self.Folder = "Kour6anHubSettings"
+    self.Folder = "Kour6anHubSettings" -- Default folder
     self.Settings = {
         Theme = "DarkTheme",
         ToggleKey = "RightControl"
     }
     self.SettingsChanged = Signal()
+    return self
+end
+
+-- Setup methods following Fluent pattern
+function InterfaceManager:SetLibrary(library)
+    self.Library = library
+end
+
+function InterfaceManager:SetFolder(folder)
+    self.Folder = folder
+    self:BuildFolderTree()
     self:LoadSettings()
     self:ApplySettings()
-    return self
 end
 
 function InterfaceManager:LoadSettings()
@@ -81,17 +90,19 @@ function InterfaceManager:SaveSettings()
 end
 
 function InterfaceManager:ApplySettings()
-    self.Library:SetTheme(self.Settings.Theme)
-    
-    -- Safe keycode application with fallback
-    local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
-    if keyCode then
-        self.Library:SetToggleKey(keyCode)
-    else
-        -- Fallback to default key if saved key is invalid
-        self.Settings.ToggleKey = "RightControl"
-        self.Library:SetToggleKey(Enum.KeyCode.RightControl)
-        self:SaveSettings()
+    if self.Library then
+        self.Library:SetTheme(self.Settings.Theme)
+        
+        -- Safe keycode application with fallback
+        local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
+        if keyCode then
+            self.Library:SetToggleKey(keyCode)
+        else
+            -- Fallback to default key if saved key is invalid
+            self.Settings.ToggleKey = "RightControl"
+            self.Library:SetToggleKey(Enum.KeyCode.RightControl)
+            self:SaveSettings()
+        end
     end
 end
 
