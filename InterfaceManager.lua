@@ -78,35 +78,41 @@ function InterfaceManager:LoadSettings()
         end)
         
         if success and type(data) == "table" then
+            -- Completely reset settings if they're corrupted
+            local needsReset = false
+            
+            -- Check if theme is a table (corrupted)
+            if data.Theme and type(data.Theme) == "table" then
+                needsReset = true
+                print("Theme is corrupted (table), resetting settings")
+            end
+            
+            -- Check if toggle key is a table (corrupted)
+            if data.ToggleKey and type(data.ToggleKey) == "table" then
+                needsReset = true
+                print("ToggleKey is corrupted (table), resetting settings")
+            end
+            
+            if needsReset then
+                -- Delete the corrupted file and use defaults
+                delfile(path)
+                self.Settings = {
+                    Theme = "DarkTheme",
+                    ToggleKey = "RightControl"
+                }
+                return
+            end
+            
             -- Only update settings that exist and are of the correct type
             for k, v in pairs(data) do
-                if self.Settings[k] ~= nil then
-                    if type(v) == type(self.Settings[k]) then
-                        self.Settings[k] = v
-                    else
-                        -- Convert to correct type if possible
-                        if k == "Theme" and type(v) == "table" then
-                            -- If theme is a table, try to extract a string value
-                            if v.Name then
-                                self.Settings[k] = tostring(v.Name)
-                            else
-                                -- Fallback to default
-                                self.Settings[k] = "DarkTheme"
-                            end
-                        elseif k == "ToggleKey" and type(v) == "table" then
-                            -- If toggle key is a table, try to extract a string value
-                            if v.Name then
-                                self.Settings[k] = tostring(v.Name)
-                            else
-                                -- Fallback to default
-                                self.Settings[k] = "RightControl"
-                            end
-                        else
-                            -- For other cases, just use the default
-                            self.Settings[k] = self.Settings[k] -- Keep default
-                        end
-                    end
+                if self.Settings[k] ~= nil and type(v) == type(self.Settings[k]) then
+                    self.Settings[k] = v
                 end
+            end
+        else
+            -- If JSON is corrupted, delete the file
+            if isfile(path) then
+                delfile(path)
             end
         end
     end
