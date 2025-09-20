@@ -507,13 +507,13 @@ function Kour6anHub.CreateLib(title, themeName)
         -- Collapse to just the topbar
         tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
         
-        -- Hide the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
-        tween(Content, {BackgroundTransparency = 1}, 0.18)
+        -- Hide the tab container and content using transparency instead of visibility
+        tween(TabContainer, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, -40)}, 0.18)
+        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -40), Position = UDim2.new(0, 0, 0, 40)}, 0.18)
         
-        -- Make tab buttons invisible
+        -- Make tab buttons invisible by setting their size to zero
         for _, tab in ipairs(Tabs) do
-            tab.Button.Visible = false
+            tween(tab.Button, {Size = UDim2.new(0, 0, 0, 0)}, 0.18)
         end
     end
 
@@ -526,12 +526,12 @@ function Kour6anHub.CreateLib(title, themeName)
         tween(self.Main, {Size = self._storedSize}, 0.18)
         
         -- Show the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
-        tween(Content, {BackgroundTransparency = 1}, 0.18)  -- Content is always transparent
+        tween(TabContainer, {BackgroundTransparency = 0, Size = UDim2.new(0, 150, 1, -40)}, 0.18)
+        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, -160, 1, -40), Position = UDim2.new(0, 160, 0, 40)}, 0.18)
         
         -- Make tab buttons visible again
         for _, tab in ipairs(Tabs) do
-            tab.Button.Visible = true
+            tween(tab.Button, {Size = UDim2.new(1, -20, 0, 40)}, 0.18)
         end
     end
 
@@ -1015,10 +1015,37 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local capturing = false
                 local boundKey = defaultKey
+                local listenerConn
 
                 local function updateDisplay()
                     local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
                     btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
+                end
+
+                local function disconnectListener()
+                    if listenerConn then
+                        listenerConn:Disconnect()
+                        listenerConn = nil
+                    end
+                end
+
+                local function setupListener()
+                    disconnectListener()
+                    listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                        if gameProcessed then return end
+                        if capturing then
+                            if input.UserInputType == Enum.UserInputType.Keyboard then
+                                boundKey = input.KeyCode
+                                capturing = false
+                                updateDisplay()
+                            end
+                            return
+                        end
+
+                        if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
+                            safeCallback(callback)
+                        end
+                    end)
                 end
 
                 btn.MouseButton1Click:Connect(function()
@@ -1026,29 +1053,23 @@ function Kour6anHub.CreateLib(title, themeName)
                     btn.Text = (desc and desc .. " : " or "") .. "[Press a key...]"
                 end)
 
-                local listenerConn
-                listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                    if gameProcessed then return end
-                    if capturing then
-                        if input.UserInputType == Enum.UserInputType.Keyboard then
-                            boundKey = input.KeyCode
-                            capturing = false
-                            updateDisplay()
-                        end
-                        return
-                    end
+                setupListener()
 
-                    if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
-                        safeCallback(callback)
-                    end
-                end)
-
-                return {
+                -- Store the connection for cleanup
+                local keybindObj = {
                     Button = btn,
                     GetKey = function() return boundKey end,
-                    SetKey = function(k) boundKey = k; updateDisplay() end,
-                    Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
+                    SetKey = function(k) 
+                        boundKey = k
+                        updateDisplay()
+                    end,
+                    Disconnect = disconnectListener
                 }
+
+                -- Add a destructor method
+                wrap.Destroying:Connect(disconnectListener)
+
+                return keybindObj
             end
 
             function SectionObj:NewDropdown(name, options, callback)
@@ -1153,7 +1174,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         task.wait(0.03)
                         local s = layout.AbsoluteContentSize
                         optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, s.Y + 8))
-                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+                        list.CanCanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
                     end)
 
                     Window._currentOpenDropdown = closeOptions
@@ -1194,6 +1215,8 @@ function Kour6anHub.CreateLib(title, themeName)
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
                 local cur = defaultColor
+                local popup = nil
+                local rSlider, gSlider, bSlider
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -1219,15 +1242,10 @@ function Kour6anHub.CreateLib(title, themeName)
                 pc.CornerRadius = UDim.new(0, 6)
                 pc.Parent = preview
 
-                local popup = nil
-                local open = false
-
-                local function closePopup()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                    end
-                    popup = nil
-                    open = false
+                local function updateSliders(r, g, b)
+                    if rSlider then rSlider:Set(r) end
+                    if gSlider then gSlider:Set(g) end
+                    if bSlider then gSlider:Set(b) end
                 end
 
                 local function createSlider(parent, y, labelText, initial, onChange)
@@ -1305,11 +1323,12 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closePopup()
+                    if popup and popup.Parent then
+                        popup:Destroy()
+                        popup = nil
                         return
                     end
-                    open = true
+                    
                     popup = Instance.new("Frame")
                     popup.Size = UDim2.new(0, 260, 0, 160)
                     popup.BackgroundColor3 = theme.SectionBackground
@@ -1342,22 +1361,22 @@ function Kour6anHub.CreateLib(title, themeName)
 
                     local r,g,b = cur.R, cur.G, cur.B
 
-                    local rSlider = createSlider(popup, 34, "R", r, function(rel)
+                    rSlider = createSlider(popup, 34, "R", r, function(rel)
                         r = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    local gSlider = createSlider(popup, 66, "G", g, function(rel)
+                    gSlider = createSlider(popup, 66, "G", g, function(rel)
                         g = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    local bSlider = createSlider(popup, 98, "B", b, function(rel)
+                    bSlider = createSlider(popup, 98, "B", b, function(rel)
                         b = rel
                         cur = Color3.new (r, g, b)
-                                                previewBox.BackgroundColor3 = cur
+                        previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
 
@@ -1370,7 +1389,8 @@ function Kour6anHub.CreateLib(title, themeName)
                             local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
                             if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
                                 conn:Disconnect()
-                                closePopup()
+                                popup:Destroy()
+                                popup = nil
                             end
                         end
                     end)
@@ -1389,6 +1409,9 @@ function Kour6anHub.CreateLib(title, themeName)
                             cur = c
                         end
                         preview.BackgroundColor3 = cur
+                        if popup and popup.Parent then
+                            updateSliders(cur.R, cur.G, cur.B)
+                        end
                         safeCallback(callback, cur)
                     end
                 }
