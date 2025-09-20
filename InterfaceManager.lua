@@ -75,9 +75,11 @@ function InterfaceManager:LoadSettings()
         local success, data = pcall(function()
             return game:GetService("HttpService"):JSONDecode(readfile(path))
         end)
-        if success then
+        if success and type(data) == "table" then
             for k, v in pairs(data) do
-                self.Settings[k] = v
+                if self.Settings[k] ~= nil then
+                    self.Settings[k] = v
+                end
             end
         end
     end
@@ -91,14 +93,29 @@ end
 
 function InterfaceManager:ApplySettings()
     if self.Library then
-        self.Library:SetTheme(self.Settings.Theme)
+        -- Ensure Theme is a string
+        if type(self.Settings.Theme) == "string" then
+            self.Library:SetTheme(self.Settings.Theme)
+        else
+            -- Fallback to default theme if invalid
+            self.Settings.Theme = "DarkTheme"
+            self.Library:SetTheme("DarkTheme")
+            self:SaveSettings()
+        end
         
         -- Safe keycode application with fallback
-        local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
-        if keyCode then
-            self.Library:SetToggleKey(keyCode)
+        if type(self.Settings.ToggleKey) == "string" then
+            local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
+            if keyCode then
+                self.Library:SetToggleKey(keyCode)
+            else
+                -- Fallback to default key if saved key is invalid
+                self.Settings.ToggleKey = "RightControl"
+                self.Library:SetToggleKey(Enum.KeyCode.RightControl)
+                self:SaveSettings()
+            end
         else
-            -- Fallback to default key if saved key is invalid
+            -- Fallback to default key if invalid type
             self.Settings.ToggleKey = "RightControl"
             self.Library:SetToggleKey(Enum.KeyCode.RightControl)
             self:SaveSettings()
