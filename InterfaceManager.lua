@@ -71,10 +71,12 @@ end
 
 function InterfaceManager:LoadSettings()
     local path = self.Folder .. "/interface.json"
+    
     if isfile(path) then
         local success, data = pcall(function()
             return game:GetService("HttpService"):JSONDecode(readfile(path))
         end)
+        
         if success and type(data) == "table" then
             for k, v in pairs(data) do
                 if self.Settings[k] ~= nil then
@@ -129,7 +131,10 @@ function InterfaceManager:BuildFolderTree()
     end
 end
 
-function InterfaceManager:BuildInterfaceSection(section)
+function InterfaceManager:BuildInterfaceSection(tab)
+    -- Create a section first
+    local section = tab:NewSection("UI Settings")
+    
     -- Theme selector
     local themes = self.Library:GetThemeList()
     local themeDropdown = section:NewDropdown("Theme", themes, function(selected)
