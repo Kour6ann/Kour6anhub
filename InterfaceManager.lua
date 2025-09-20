@@ -35,7 +35,17 @@ end
 
 function InterfaceManager:ApplySettings()
     self.Library:SetTheme(self.Settings.Theme)
-    self.Library:SetToggleKey(Enum.KeyCode[self.Settings.ToggleKey])
+    
+    -- Safe keycode application with fallback
+    local keyCode = Enum.KeyCode[self.Settings.ToggleKey]
+    if keyCode then
+        self.Library:SetToggleKey(keyCode)
+    else
+        -- Fallback to default key if saved key is invalid
+        self.Settings.ToggleKey = "RightControl"
+        self.Library:SetToggleKey(Enum.KeyCode.RightControl)
+        self:SaveSettings()
+    end
 end
 
 function InterfaceManager:BuildFolderTree()
