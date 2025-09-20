@@ -507,13 +507,13 @@ function Kour6anHub.CreateLib(title, themeName)
         -- Collapse to just the topbar
         tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
         
-        -- Hide the tab container and content using transparency instead of visibility
-        tween(TabContainer, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, -40)}, 0.18)
-        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -40), Position = UDim2.new(0, 0, 0, 40)}, 0.18)
+        -- Hide the tab container and content
+        tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)
         
-        -- Make tab buttons invisible by setting their size to zero
+        -- Make tab buttons invisible
         for _, tab in ipairs(Tabs) do
-            tween(tab.Button, {Size = UDim2.new(0, 0, 0, 0)}, 0.18)
+            tab.Button.Visible = false
         end
     end
 
@@ -526,12 +526,12 @@ function Kour6anHub.CreateLib(title, themeName)
         tween(self.Main, {Size = self._storedSize}, 0.18)
         
         -- Show the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 0, Size = UDim2.new(0, 150, 1, -40)}, 0.18)
-        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, -160, 1, -40), Position = UDim2.new(0, 160, 0, 40)}, 0.18)
+        tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)  -- Content is always transparent
         
         -- Make tab buttons visible again
         for _, tab in ipairs(Tabs) do
-            tween(tab.Button, {Size = UDim2.new(1, -20, 0, 40)}, 0.18)
+            tab.Button.Visible = true
         end
     end
 
@@ -1015,37 +1015,10 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local capturing = false
                 local boundKey = defaultKey
-                local listenerConn
 
                 local function updateDisplay()
                     local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
                     btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
-                end
-
-                local function disconnectListener()
-                    if listenerConn then
-                        listenerConn:Disconnect()
-                        listenerConn = nil
-                    end
-                end
-
-                local function setupListener()
-                    disconnectListener()
-                    listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                        if gameProcessed then return end
-                        if capturing then
-                            if input.UserInputType == Enum.UserInputType.Keyboard then
-                                boundKey = input.KeyCode
-                                capturing = false
-                                updateDisplay()
-                            end
-                            return
-                        end
-
-                        if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
-                            safeCallback(callback)
-                        end
-                    end)
                 end
 
                 btn.MouseButton1Click:Connect(function()
@@ -1053,23 +1026,29 @@ function Kour6anHub.CreateLib(title, themeName)
                     btn.Text = (desc and desc .. " : " or "") .. "[Press a key...]"
                 end)
 
-                setupListener()
+                local listenerConn
+                listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if capturing then
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            boundKey = input.KeyCode
+                            capturing = false
+                            updateDisplay()
+                        end
+                        return
+                    end
 
-                -- Store the connection for cleanup
-                local keybindObj = {
+                    if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
+                        safeCallback(callback)
+                    end
+                end)
+
+                return {
                     Button = btn,
                     GetKey = function() return boundKey end,
-                    SetKey = function(k) 
-                        boundKey = k
-                        updateDisplay()
-                    end,
-                    Disconnect = disconnectListener
+                    SetKey = function(k) boundKey = k; updateDisplay() end,
+                    Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
                 }
-
-                -- Add a destructor method
-                wrap.Destroying:Connect(disconnectListener)
-
-                return keybindObj
             end
 
             function SectionObj:NewDropdown(name, options, callback)
@@ -1174,7 +1153,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         task.wait(0.03)
                         local s = layout.AbsoluteContentSize
                         optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, s.Y + 8))
-                        list.CanCanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
                     end)
 
                     Window._currentOpenDropdown = closeOptions
@@ -1215,8 +1194,6 @@ function Kour6anHub.CreateLib(title, themeName)
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
                 local cur = defaultColor
-                local popup = nil
-                local rSlider, gSlider, bSlider
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -1242,10 +1219,15 @@ function Kour6anHub.CreateLib(title, themeName)
                 pc.CornerRadius = UDim.new(0, 6)
                 pc.Parent = preview
 
-                local function updateSliders(r, g, b)
-                    if rSlider then rSlider:Set(r) end
-                    if gSlider then gSlider:Set(g) end
-                    if bSlider then gSlider:Set(b) end
+                local popup = nil
+                local open = false
+
+                local function closePopup()
+                    if popup and popup.Parent then
+                        popup:Destroy()
+                    end
+                    popup = nil
+                    open = false
                 end
 
                 local function createSlider(parent, y, labelText, initial, onChange)
@@ -1323,12 +1305,11 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                        popup = nil
+                    if open then
+                        closePopup()
                         return
                     end
-                    
+                    open = true
                     popup = Instance.new("Frame")
                     popup.Size = UDim2.new(0, 260, 0, 160)
                     popup.BackgroundColor3 = theme.SectionBackground
@@ -1361,22 +1342,22 @@ function Kour6anHub.CreateLib(title, themeName)
 
                     local r,g,b = cur.R, cur.G, cur.B
 
-                    rSlider = createSlider(popup, 34, "R", r, function(rel)
+                    local rSlider = createSlider(popup, 34, "R", r, function(rel)
                         r = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    gSlider = createSlider(popup, 66, "G", g, function(rel)
+                    local gSlider = createSlider(popup, 66, "G", g, function(rel)
                         g = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    bSlider = createSlider(popup, 98, "B", b, function(rel)
+                    local bSlider = createSlider(popup, 98, "B", b, function(rel)
                         b = rel
                         cur = Color3.new (r, g, b)
-                        previewBox.BackgroundColor3 = cur
+                                                previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
 
@@ -1389,8 +1370,7 @@ function Kour6anHub.CreateLib(title, themeName)
                             local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
                             if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
                                 conn:Disconnect()
-                                popup:Destroy()
-                                popup = nil
+                                closePopup()
                             end
                         end
                     end)
@@ -1409,9 +1389,6 @@ function Kour6anHub.CreateLib(title, themeName)
                             cur = c
                         end
                         preview.BackgroundColor3 = cur
-                        if popup and popup.Parent then
-                            updateSliders(cur.R, cur.G, cur.B)
-                        end
                         safeCallback(callback, cur)
                     end
                 }
@@ -1433,5 +1410,147 @@ function Kour6anHub.CreateLib(title, themeName)
 
     return Window
 end
+
+
+-- <<AUTOGENERATED PATCH: Auto-registry + helpers for SaveManager / InterfaceManager>>
+-- This wrapper augments CreateLib at runtime; it does not alter original constructors.
+do
+    local _origCreate = Kour6anHub.CreateLib
+    Kour6anHub.CreateLib = function(title, themeName)
+        local Window = _origCreate(title, themeName)
+
+        -- add registry and helper containers
+        Window._registry = Window._registry or {}        -- key -> {type, get, set, meta}
+        Window._tabButtons = Window._tabButtons or {}    -- stores tab button Instances
+        Window.ActiveTabName = Window.ActiveTabName or nil
+        Window.ThemeName = Window.ThemeName or themeName or "LightTheme"
+
+        -- helper: expose registry
+        function Window:GetRegistry()
+            return self._registry
+        end
+
+        -- helper: select a tab programmatically by name (attempts to mimic internal behaviour)
+        function Window:SelectTab(tabName)
+            -- try to find matching tab button under the ScreenGui by text
+            pcall(function()
+                if not self.ScreenGui then return end
+                for _, btn in ipairs(self.ScreenGui:GetDescendants()) do
+                    if btn:IsA("TextButton") and btn.Text == tabName then
+                        -- find the MouseButton1Click connections if present; otherwise simulate by setting attributes
+                        -- Attempt to call the connected function by firing the event (if accessible) or toggling visuals.
+                        -- Safer fallback: set ActiveTabName and hide/show frames by searching for frames containing sections.
+                        self.ActiveTabName = tabName
+                        -- try to find frames that belong to this tab by searching for a section frame whose sibling button text matches
+                        for _, frame in ipairs(self.Main:GetDescendants()) do
+                            if frame:IsA("Frame") and frame.Name == "_section" then
+                                -- look for ancestor tab frame by climbing parent chain and check Visibility
+                                local parentFrame = frame.Parent
+                                if parentFrame and parentFrame:IsA("Frame") then
+                                    -- crude heuristic: set visible if it contains a child with text equal to tabName
+                                    -- (best-effort; original tab selection handler will still be used if user clicks)
+                                    pcall(function()
+                                        for _, descendant in ipairs(parentFrame:GetDescendants()) do
+                                            if descendant:IsA("TextButton") and descendant.Text == tabName then
+                                                parentFrame.Visible = true
+                                            end
+                                        end
+                                    end)
+                                end
+                            end
+                        end
+                        return
+                    end
+                end
+            end)
+        end
+
+        -- Wrap Window.NewTab so we can wrap returned TabObj:NewSection to auto-wrap Section methods
+        if Window.NewTab then
+            local _origNewTab = Window.NewTab
+            Window.NewTab = function(self, tabName, ...)
+                local TabObj = _origNewTab(self, tabName, ...)
+                -- attempt to find the created TabButton instance and store it
+                pcall(function()
+                    if self.ScreenGui then
+                        for _, btn in ipairs(self.ScreenGui:GetDescendants()) do
+                            if btn:IsA("TextButton") and btn.Text == tabName then
+                                table.insert(self._tabButtons, btn)
+                                -- attach a helper to update ActiveTabName when user clicks
+                                if not btn:GetAttribute("_k6_tab_wrapped") then
+                                    btn:SetAttribute("_k6_tab_wrapped", true)
+                                    btn.MouseButton1Click:Connect(function()
+                                        self.ActiveTabName = tabName
+                                    end)
+                                end
+                                break
+                            end
+                        end
+                    end
+                end)
+
+                -- Wrap NewSection on this TabObj to intercept control creation
+                if type(TabObj.NewSection) == "function" then
+                    local _origNewSection = TabObj.NewSection
+                    TabObj.NewSection = function(tabself, sectionName, ...)
+                        local SectionObj = _origNewSection(tabself, sectionName, ...)
+                        -- list of stateful control methods to wrap
+                        local stateful = {"NewToggle","NewSlider","NewTextbox","NewDropdown","NewColorpicker","NewColorPicker","NewKeybind","NewKeyBind"}
+                        for _, fname in ipairs(stateful) do
+                            if type(SectionObj[fname]) == "function" then
+                                local _orig = SectionObj[fname]
+                                SectionObj[fname] = function(secself, ...)
+                                    local args = {...}
+                                    local idCandidate = nil
+                                    if #args > 0 and type(args[#args]) == "string" then
+                                        -- treat final string argument as optional id if caller provided it explicitly
+                                        idCandidate = args[#args]
+                                    end
+                                    local ok, control = pcall(function() return _orig(secself, unpack(args)) end)
+                                    if not ok then return control end
+                                    -- build a stable key
+                                    local label = tostring(args[1] or "control")
+                                    local key = idCandidate or (tostring(tabName) .. "." .. tostring(sectionName) .. "." .. label)
+                                    -- create registry entry using common Get/Set conventions
+                                    local entry = { type = fname, meta = { tab = tabName, section = sectionName, label = label } }
+                                    -- detect getter/setter on returned control
+                                    if type(control) == "table" then
+                                        if type(control.GetState) == "function" and type(control.SetState) == "function" then
+                                            entry.get = function() return control:GetState() end
+                                            entry.set = function(v) return control:SetState(v) end
+                                        elseif type(control.Get) == "function" and type(control.Set) == "function" then
+                                            entry.get = function() return control:Get() end
+                                            entry.set = function(v) return control:Set(v) end
+                                        elseif type(control.GetValue) == "function" and type(control.SetValue) == "function" then
+                                            entry.get = function() return control:GetValue() end
+                                            entry.set = function(v) return control:SetValue(v) end
+                                        else
+                                            -- best-effort: attempt common field names
+                                            if control.Value ~= nil then
+                                                entry.get = function() return control.Value end
+                                                entry.set = function(v) control.Value = v end
+                                            end
+                                        end
+                                        -- register only if we have get and set
+                                        if entry.get and entry.set then
+                                            self._registry[key] = entry
+                                        end
+                                    end
+                                    return control
+                                end
+                            end
+                        end
+                        return SectionObj
+                    end
+                end
+
+                return TabObj
+            end
+        end
+
+        return Window
+    end
+end
+-- <<END OF AUTOGEN PATCH>>
 
 return Kour6anHub
