@@ -1,326 +1,377 @@
--- SaveManager for Kour6anHub (drop-in)
-local HttpService = game:GetService("HttpService")
 local SaveManager = {}
 SaveManager.__index = SaveManager
 
-function SaveManager.new(lib)
-    local self = setmetatable({
-        lib = lib,
-        folder = "Kour6anHubConfigs",
-        ignoreKeys = {},
-        ignorePattern = nil,
-    }, SaveManager)
+-- Simple promise implementation for async operations
+local function Promise(executor)
+    local self = {}
+    self._state = "pending"
+    self._value = nil
+    self._reason = nil
+    self._onFulfilled = {}
+    self._onRejected = {}
+
+    local function resolve(value)
+        if self._state ~= "pending" then return end
+        self._state = "fulfilled"
+        self._value = value
+        for _, callback in ipairs(self._onFulfilled) do
+            task.spawn(callback, value)
+        end
+    end
+
+    local function reject(reason)
+        if self._state ~= "pending" then return end
+        self._state = "rejected"
+        self._reason = reason
+        for _, callback in ipairs(self._onRejected) do
+            task.spawn(callback, reason)
+        end
+    end
+
+    task.spawn(function()
+        local success, result = pcall(executor, resolve, reject)
+        if not success then
+            reject(result)
+        end
+    end)
+
+    function self:Then(onFulfilled, onRejected)
+        if self._state == "fulfilled" and onFulfilled then
+            task.spawn(onFulfilled, self._value)
+        elseif self._state == "rejected" and onRejected then
+            task.spawn(onRejected, self._reason)
+        else
+            if onFulfilled then
+                table.insert(self._onFulfilled, onFulfilled)
+            end
+            if onRejected then
+                table.insert(self._onRejected, onRejected)
+            end
+        end
+        return self
+    end
+
+    function self:Catch(onRejected)
+        return self:Then(nil, onRejected)
+    end
+
     return self
 end
 
-function SaveManager:SetFolder(path) self.folder = path end
-function SaveManager:SetIgnoreKeys(list) self.ignoreKeys = list or {} end
-function SaveManager:SetIgnorePattern(pat) self.ignorePattern = pat end
-
-local function can_write()
-    return type(writefile) == "function" and type(readfile) == "function"
+function SaveManager.new(library)
+    local self = setmetatable({}, SaveManager)
+    self.Library = library
+    self.Folder = "Kour6anHubSettings"
+    self.Options = {}
+    self.Ignore = {}
+    self.Parser = {
+        Toggle = {
+            Save = function(idx, object) 
+                return { type = "Toggle", idx = idx, value = object:GetState() } 
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:SetState(data.value)
+                end
+            end,
+        },
+        Slider = {
+            Save = function(idx, object)
+                return { type = "Slider", idx = idx, value = object:Get() }
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
+                end
+            end,
+        },
+        Dropdown = {
+            Save = function(idx, object)
+                return { type = "Dropdown", idx = idx, value = object:Get() }
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
+                end
+            end,
+        },
+        Colorpicker = {
+            Save = function(idx, object)
+                local color = object:Get()
+                return { type = "Colorpicker", idx = idx, value = {color.R, color.G, color.B} }
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(Color3.new(data.value[1], data.value[2], data.value[3]))
+                end
+            end,
+        },
+        Keybind = {
+            Save = function(idx, object)
+                return { type = "Keybind", idx = idx, key = object:GetKey().Name }
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:SetKey(Enum.KeyCode[data.key])
+                end
+            end,
+        },
+        Textbox = {
+            Save = function(idx, object)
+                return { type = "Textbox", idx = idx, value = object:Get() }
+            end,
+            Load = function(idx, data)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
+                end
+            end,
+        }
+    }
+    self:BuildFolderTree()
+    return self
 end
 
-local function safe_write(path, data)
-    if can_write() then
-        pcall(function() writefile(path, data) end)
-    else
-        _G.__Kour6anHubSaves = _G.__Kour6anHubSaves or {}
-        _G.__Kour6anHubSaves[path] = data
+function SaveManager:SetIgnoreIndexes(list)
+    for _, key in ipairs(list) do
+        self.Ignore[key] = true
     end
 end
 
-local function safe_read(path)
-    if can_write() then
-        if pcall(function() return readfile(path) end) then
-            return readfile(path)
+function SaveManager:Save(name)
+    if not name or name == "" then return false, "No config name provided" end
+    
+    local data = {
+        objects = {}
+    }
+    
+    for idx, option in pairs(self.Options) do
+        if self.Ignore[idx] then 
+            -- Skip ignored options (using explicit check instead of continue)
         else
-            return nil
-        end
-    else
-        return _G.__Kour6anHubSaves and _G.__Kour6anHubSaves[path] or nil
-    end
-end
-
-function SaveManager:_walkRegistry()
-    local out = {}
-    if not self.lib or not self.lib._registry then return out end
-    for key, entry in pairs(self.lib._registry) do
-        if entry and entry.get and not table.find(self.ignoreKeys, key) then
-            if self.ignorePattern and tostring(key):match(self.ignorePattern) then
-                -- skip
-            else
-                local ok, val = pcall(entry.get)
-                if ok then out[key] = val end
+            if self.Parser[option.Type] then
+                table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
             end
         end
     end
-    return out
-end
-
-function SaveManager:SaveConfig(name)
-    name = name or ("config_" .. tostring(os.time()))
-    local data = self:_walkRegistry()
-    local raw = HttpService:JSONEncode({meta={saved=os.time()}, data=data})
-    local path = self.folder .. "/" .. name .. ".json"
-    safe_write(path, raw)
+    
+    local json = game:GetService("HttpService"):JSONEncode(data)
+    writefile(self.Folder .. "/" .. name .. ".json", json)
     return true
 end
 
-function SaveManager:ListConfigs()
-    if can_write() and type(listfiles) == "function" then
-        local files = listfiles(self.folder) or {}
-        local out = {}
-        for _, f in ipairs(files) do
-            if f:match("%.json$") then
-                local n = f:match("[^/\\]+%.json$"):gsub("%.json$","")
-                table.insert(out, n)
-            end
+function SaveManager:SaveAsync(name)
+    return Promise(function(resolve, reject)
+        local success, err = self:Save(name)
+        if success then
+            resolve()
+        else
+            reject(err)
         end
-        return out
-    else
-        local out = {}
-        if _G.__Kour6anHubSaves then
-            for k,_ in pairs(_G.__Kour6anHubSaves) do
-                if k:match(self.folder) and k:match("%.json$") then
-                    local n = k:match("[^/\\]+%.json$"):gsub("%.json$","")
-                    table.insert(out, n)
+    end)
+end
+
+function SaveManager:Load(name)
+    if not name then return false, "No config name provided" end
+    
+    local path = self.Folder .. "/" .. name .. ".json"
+    if not isfile(path) then return false, "Config file doesn't exist" end
+    
+    local success, data = pcall(function()
+        return game:GetService("HttpService"):JSONDecode(readfile(path))
+    end)
+    
+    if not success then return false, "Failed to parse config" end
+    
+    for _, optionData in ipairs(data.objects) do
+        if self.Parser[optionData.type] then
+            self.Parser[optionData.type].Load(optionData.idx, optionData)
+        end
+    end
+    
+    return true
+end
+
+function SaveManager:LoadAsync(name)
+    return Promise(function(resolve, reject)
+        local success, err = self:Load(name)
+        if success then
+            resolve()
+        else
+            reject(err)
+        end
+    end)
+end
+
+function SaveManager:Delete(name)
+    if not name then return false, "No config name provided" end
+    
+    local path = self.Folder .. "/" .. name .. ".json"
+    if not isfile(path) then return false, "Config file doesn't exist" end
+    
+    delfile(path)
+    return true
+end
+
+function SaveManager:DeleteAsync(name)
+    return Promise(function(resolve, reject)
+        local success, err = self:Delete(name)
+        if success then
+            resolve()
+        else
+            reject(err)
+        end
+    end)
+end
+
+function SaveManager:BuildFolderTree()
+    if not isfolder(self.Folder) then
+        makefolder(self.Folder)
+    end
+end
+
+function SaveManager:GetConfigList()
+    local configs = {}
+    if isfolder(self.Folder) then
+        for _, file in ipairs(listfiles(self.Folder)) do
+            if file:sub(-5) == ".json" then
+                local name = file:match("([^/]+)%.json$")
+                if name ~= "interface" then
+                    table.insert(configs, name)
                 end
             end
         end
-        return out
     end
+    return configs
 end
 
-function SaveManager:LoadConfig(name)
-    local path = self.folder .. "/" .. name .. ".json"
-    local raw = safe_read(path)
-    if not raw then return false, "file not found" end
-    local ok, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not ok or not parsed or not parsed.data then return false, "invalid file" end
-    local data = parsed.data
-
-    for key, value in pairs(data) do
-        local entry = self.lib._registry[key]
-        if entry and entry.set then
-            pcall(function() entry.set(value) end)
-        end
-    end
-
-    return true
-end
-
-
-
--- Delete config file
-function SaveManager:DeleteConfig(name)
-    if not name or name == "" then return false, "invalid name" end
-    local path = self.folder .. "/" .. name .. ".json"
-    local success = false
-    if type(delfile) == "function" then
-        pcall(function() delfile(path) end)
-        success = true
-    elseif type(removefile) == "function" then
-        pcall(function() removefile(path) end)
-        success = true
-    elseif type(writefile) == "function" then
-        -- best-effort fallback: overwrite with empty JSON
-        pcall(function() writefile(path, "") end)
-        success = true
-    else
-        if _G.__Kour6anHubSaves then
-            _G.__Kour6anHubSaves[path] = nil
-            success = true
-        end
-    end
-    return success
-end
-
--- Autoload helpers (persist autoload selection to a special file)
 function SaveManager:SetAutoload(name)
-    if not name or name == "" then return false end
-    local raw = HttpService:JSONEncode({name = name})
-    safe_write(self.folder .. "/_autoload.json", raw)
-    return true
-end
-
-function SaveManager:ClearAutoload()
-    local path = self.folder .. "/_autoload.json"
-    if type(delfile) == "function" then
-        pcall(function() delfile(path) end)
-    elseif type(removefile) == "function" then
-        pcall(function() removefile(path) end)
-    else
-        if _G.__Kour6anHubSaves then _G.__Kour6anHubSaves[path] = nil end
+    if not name then 
+        if isfile(self.Folder .. "/autoload.txt") then
+            delfile(self.Folder .. "/autoload.txt")
+        end
+        return
     end
+    
+    writefile(self.Folder .. "/autoload.txt", name)
 end
 
 function SaveManager:GetAutoload()
-    local path = self.folder .. "/_autoload.json"
-    local raw = safe_read(path)
-    if not raw then return nil end
-    local ok, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not ok or not parsed or not parsed.name then return nil end
-    return parsed.name
+    if isfile(self.Folder .. "/autoload.txt") then
+        return readfile(self.Folder .. "/autoload.txt")
+    end
+    return nil
 end
 
-function SaveManager:TryLoadAutoload()
-    local name = self:GetAutoload()
-    if name then
-        local ok, err = self:LoadConfig(name)
-        return ok, err
+function SaveManager:LoadAutoload()
+    local autoload = self:GetAutoload()
+    if autoload then
+        return self:Load(autoload)
     end
-    return false, "no autoload set"
+    return false, "No autoload config set"
 end
 
--- Build a Settings UI section inside the library (Fluent-like UX)
--- If tabArg is omitted, will create a tab named "Settings"
-function SaveManager:BuildConfigSection(tabArg)
-    if not self.lib then return end
-    local lib = self.lib
-    local tab = tabArg
-    -- try to find existing Settings tab; else create new
-    if not tab then
-        -- avoid creating duplicate if one exists
-        if lib.Tabs and type(lib.Tabs) == "table" then
-            for _, t in ipairs(lib.Tabs) do
-                if t.Button and t.Button.Text == "Settings" then
-                    -- construct a simple TabObj wrapper that uses the library's NewTab for full API
-                    tab = lib:NewTab("Settings")
-                    break
-                end
-            end
-        end
-        if not tab then
-            tab = lib:NewTab("Settings")
-        end
-    end
-
-    -- create a section for configs
-    local section = tab:NewSection("Configurations")
-
-    -- helper to refresh list
-    local function refreshList(drop)
-        local list = self:ListConfigs() or {}
-        if drop and type(drop.Refresh) == "function" then
-            drop:Refresh(list)
-        end
-    end
-
-    -- create dropdown of configs
-    local configs = self:ListConfigs()
-    local dropdown = section:NewDropdown("Configs", configs, function() end)
-
-    -- create label + textbox for save name (we create the textbox instance manually to access its Text)
-    local lbl = section:NewLabel("Save as:")
-    local sectionFrame = lbl.Parent
-
-    local nameBox = Instance.new("TextBox")
-    nameBox.Size = UDim2.new(1, 0, 0, 28)
-    nameBox.BackgroundColor3 = sectionFrame.BackgroundColor3 or Color3.fromRGB(40,40,40)
-    nameBox.TextColor3 = lib.ThemeName and Color3.fromRGB(255,255,255) or Color3.fromRGB(200,200,200)
-    nameBox.PlaceholderText = "config_name"
-    nameBox.Text = ""
-    nameBox.Font = Enum.Font.Gotham
-    nameBox.TextSize = 14
-    nameBox.Parent = sectionFrame
-
+function SaveManager:BuildConfigSection(tab)
+    local section = tab:NewSection("Configuration")
+    
+    -- Config name input
+    local configNameInput = section:NewTextbox("Config Name", "", function() end)
+    self.Options["ConfigNameInput"] = {
+        Type = "Textbox",
+        Get = configNameInput.Get,
+        Set = configNameInput.Set
+    }
+    
+    -- Config list dropdown
+    local configList = self:GetConfigList()
+    local configDropdown = section:NewDropdown("Config List", configList, function(selected)
+        configNameInput:Set(selected)
+    end)
+    self.Options["ConfigDropdown"] = {
+        Type = "Dropdown",
+        Get = configDropdown.Get,
+        Set = configDropdown.Set,
+        Refresh = configDropdown.Refresh
+    }
+    
     -- Save button
-    section:NewButton("Save Config", nil, function()
-        local name = tostring(nameBox.Text or ""):gsub("%s+", "_")
-        if name == "" then name = "config_" .. tostring(os.time()) end
-        self:SaveConfig(name)
-        refreshList(dropdown)
-        -- optional notification if lib has a notification api
-        if lib.Notify then
-            pcall(function() lib:Notify("Saved config: "..name) end)
+    section:NewButton("Save Config", function()
+        local name = configNameInput:Get()
+        if name == "" then
+            self.Library:Notify("Error", "Please enter a config name")
+            return
         end
+        
+        self:SaveAsync(name)
+            :Then(function()
+                self.Library:Notify("Success", "Config saved: " .. name)
+                configDropdown:Refresh(self:GetConfigList())
+            end)
+            :Catch(function(err)
+                self.Library:Notify("Error", "Failed to save: " .. tostring(err))
+            end)
     end)
-
+    
     -- Load button
-    section:NewButton("Load Selected", nil, function()
-        local sel = nil
-        pcall(function() sel = dropdown.Get and dropdown:Get() end)
-        if not sel or sel == "" then
-            if lib.Notify then pcall(function() lib:Notify("No config selected") end) end
+    section:NewButton("Load Config", function()
+        local name = configNameInput:Get()
+        if name == "" then
+            self.Library:Notify("Error", "Please select a config")
             return
         end
-        local ok, err = self:LoadConfig(sel)
-        if ok then
-            if lib.Notify then pcall(function() lib:Notify("Loaded config: "..sel) end) end
-        else
-            if lib.Notify then pcall(function() lib:Notify("Failed to load: "..tostring(err)) end) end
-        end
+        
+        self:LoadAsync(name)
+            :Then(function()
+                self.Library:Notify("Success", "Config loaded: " .. name)
+            end)
+            :Catch(function(err)
+                self.Library:Notify("Error", "Failed to load: " .. tostring(err))
+            end)
     end)
-
+    
     -- Delete button
-    section:NewButton("Delete Selected", nil, function()
-        local sel = nil
-        pcall(function() sel = dropdown.Get and dropdown:Get() end)
-        if not sel or sel == "" then
-            if lib.Notify then pcall(function() lib:Notify("No config selected") end) end
+    section:NewButton("Delete Config", function()
+        local name = configNameInput:Get()
+        if name == "" then
+            self.Library:Notify("Error", "Please select a config")
             return
         end
-        self:DeleteConfig(sel)
-        refreshList(dropdown)
-        if lib.Notify then pcall(function() lib:Notify("Deleted config: "..sel) end) end
+        
+        self:DeleteAsync(name)
+            :Then(function()
+                self.Library:Notify("Success", "Config deleted: " .. name)
+                configDropdown:Refresh(self:GetConfigList())
+                configNameInput:Set("")
+            end)
+            :Catch(function(err)
+                self.Library:Notify("Error", "Failed to delete: " .. tostring(err))
+            end)
     end)
-
-    -- Autoload toggle + dropdown for autoload selection
-    local autToggle = section:NewToggle("Autoload", "Load selected config on startup", function() end)
-    local autLabel = section:NewLabel("Autoload selection:")
-    local autDropdown = section:NewDropdown("Autoload", self:ListConfigs(), function() end)
-
-    -- initialize autoload UI state
-    local currentAut = self:GetAutoload()
-    if currentAut and autDropdown.Set then
-        autDropdown:Set(currentAut)
-        if autToggle.SetState then autToggle:SetState(true) end
-    else
-        if autToggle.SetState then autToggle:SetState(false) end
+    
+    -- Refresh button
+    section:NewButton("Refresh List", function()
+        configDropdown:Refresh(self:GetConfigList())
+    end)
+    
+    -- Autoload button
+    local autoloadBtn = section:NewButton("Set Autoload", function()
+        local name = configNameInput:Get()
+        if name == "" then
+            self.Library:Notify("Error", "Please select a config")
+            return
+        end
+        
+        self:SetAutoload(name)
+        self.Library:Notify("Success", "Autoload set to: " .. name)
+    end)
+    
+    -- Show current autoload
+    local autoload = self:GetAutoload()
+    if autoload then
+        section:NewLabel("Current Autoload: " .. autoload)
     end
-
-    -- wire autoload dropdown changes
-    if autDropdown.Set then
-        -- ensure UI updates when user selects
-        (function()
-            local origSet = autDropdown.Set
-            autDropdown.Set = function(v)
-                origSet(v)
-                -- save selection to autoload if toggle is enabled
-                if autToggle.GetState and autToggle.GetState() then
-                    self:SetAutoload(v)
-                end
-            end
-        end)()
-    end
-
-    -- wire toggle callback to persist autoload choice
-    if autToggle.SetState then
-        -- we assume toggle was created earlier with a callback; override to hook persistence
-        (function()
-            local origToggleGet = autToggle.GetState
-            local origToggleSet = autToggle.SetState
-            autToggle.SetState = function(v)
-                origToggleSet(v)
-                if v then
-                    local sel = nil
-                    pcall(function() sel = autDropdown.Get and autDropdown:Get() end)
-                    if sel and sel ~= "" then
-                        self:SetAutoload(sel)
-                    end
-                else
-                    self:ClearAutoload()
-                end
-            end
-        end)()
-    end
-
-    -- refresh the two dropdowns visually
-    refreshList(dropdown)
-    refreshList(autDropdown)
-
-    -- attempt autoload immediately if an autoload is set
-    pcall(function() self:TryLoadAutoload() end)
+    
+    -- Ignore UI elements in saving
+    self:SetIgnoreIndexes({"ConfigNameInput", "ConfigDropdown"})
 end
+
 return SaveManager
