@@ -1089,22 +1089,23 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 setupListener()
 
-                -- Store the connection for cleanup
-                local keybindObj = {
-                    Button = btn,
-                    GetKey = function() return boundKey end,
-                    SetKey = function(k) 
-                        boundKey = k
-                        updateDisplay()
-                    end,
-                    Disconnect = disconnectListener
-                }
+-- Store the connection for cleanup
+local keybindObj = {
+    Button = btn,
+    GetKey = function() return boundKey end,
+    SetKey = function(k) 
+        boundKey = k
+        updateDisplay()
+    end,
+    Disconnect = disconnectListener
+}
 
-                -- Add a destructor method
-                wrap.Destroying:Connect(disconnectListener)
-
-                return keybindObj
-            end
+-- Add a destructor method
+wrap.Destroying:Connect(function()
+    if disconnectListener and type(disconnectListener) == "function" then
+        disconnectListener()
+    end
+end)
 
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
