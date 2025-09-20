@@ -1395,5 +1395,3 @@ function Kour6anHub.CreateLib(title, themeName)
 end
 
 return Kour6anHub
-
-return Kour6anHub 
