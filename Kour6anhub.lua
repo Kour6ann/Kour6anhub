@@ -181,7 +181,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     local Title = Instance.new("TextLabel")
     Title.Text = title or "Kour6anHub"
-    Title.Size = UDim2.new(1, -10, 1, 0)
+    Title.Size = UDim2.new(1, -90, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
     Title.TextColor3 = theme.Text
@@ -236,7 +236,6 @@ function Kour6anHub.CreateLib(title, themeName)
             minimized = true
         end
     end)
-
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
