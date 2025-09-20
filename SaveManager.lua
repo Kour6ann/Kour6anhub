@@ -13,8 +13,8 @@ function SaveManager.new(library)
                 return { type = "Toggle", idx = idx, value = object:GetState() } 
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:SetState(data.value)
+                if self.Options[idx] then 
+                    self.Options[idx]:SetState(data.value)
                 end
             end,
         },
@@ -23,8 +23,8 @@ function SaveManager.new(library)
                 return { type = "Slider", idx = idx, value = object:Get() }
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:Set(data.value)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
                 end
             end,
         },
@@ -33,8 +33,8 @@ function SaveManager.new(library)
                 return { type = "Dropdown", idx = idx, value = object:Get() }
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:Set(data.value)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
                 end
             end,
         },
@@ -44,8 +44,8 @@ function SaveManager.new(library)
                 return { type = "Colorpicker", idx = idx, value = {color.R, color.G, color.B} }
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:Set(Color3.new(data.value[1], data.value[2], data.value[3]))
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(Color3.new(data.value[1], data.value[2], data.value[3]))
                 end
             end,
         },
@@ -54,8 +54,8 @@ function SaveManager.new(library)
                 return { type = "Keybind", idx = idx, key = object:GetKey().Name }
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:SetKey(Enum.KeyCode[data.key])
+                if self.Options[idx] then 
+                    self.Options[idx]:SetKey(Enum.KeyCode[data.key])
                 end
             end,
         },
@@ -64,8 +64,8 @@ function SaveManager.new(library)
                 return { type = "Textbox", idx = idx, value = object:Get() }
             end,
             Load = function(idx, data)
-                if SaveManager.Options[idx] then 
-                    SaveManager.Options[idx]:Set(data.value)
+                if self.Options[idx] then 
+                    self.Options[idx]:Set(data.value)
                 end
             end,
         }
@@ -88,9 +88,12 @@ function SaveManager:Save(name)
     }
     
     for idx, option in pairs(self.Options) do
-        if self.Ignore[idx] then continue end
-        if self.Parser[option.Type] then
-            table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
+        if self.Ignore[idx] then 
+            -- Skip ignored options (using explicit check instead of continue)
+        else
+            if self.Parser[option.Type] then
+                table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
+            end
         end
     end
     
