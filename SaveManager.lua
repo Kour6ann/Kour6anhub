@@ -1,284 +1,112 @@
+-- SaveManager for Kour6anHub (drop-in)
+local HttpService = game:GetService("HttpService")
 local SaveManager = {}
 SaveManager.__index = SaveManager
 
-function SaveManager.new(library)
-    local self = setmetatable({}, SaveManager)
-    self.Library = library
-    self.Folder = "Kour6anHubSettings"
-    self.Options = {}
-    self.Ignore = {}
-    self.Parser = {
-        Toggle = {
-            Save = function(idx, object) 
-                return { type = "Toggle", idx = idx, value = object:GetState() } 
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:SetState(data.value)
-                end
-            end,
-        },
-        Slider = {
-            Save = function(idx, object)
-                return { type = "Slider", idx = idx, value = object:Get() }
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:Set(data.value)
-                end
-            end,
-        },
-        Dropdown = {
-            Save = function(idx, object)
-                return { type = "Dropdown", idx = idx, value = object:Get() }
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:Set(data.value)
-                end
-            end,
-        },
-        Colorpicker = {
-            Save = function(idx, object)
-                local color = object:Get()
-                return { type = "Colorpicker", idx = idx, value = {color.R, color.G, color.B} }
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:Set(Color3.new(data.value[1], data.value[2], data.value[3]))
-                end
-            end,
-        },
-        Keybind = {
-            Save = function(idx, object)
-                return { type = "Keybind", idx = idx, key = object:GetKey().Name }
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:SetKey(Enum.KeyCode[data.key])
-                end
-            end,
-        },
-        Textbox = {
-            Save = function(idx, object)
-                return { type = "Textbox", idx = idx, value = object:Get() }
-            end,
-            Load = function(idx, data)
-                if self.Options[idx] then 
-                    self.Options[idx]:Set(data.value)
-                end
-            end,
-        }
-    }
-    self:BuildFolderTree()
+function SaveManager.new(lib)
+    local self = setmetatable({
+        lib = lib,
+        folder = "Kour6anHubConfigs",
+        ignoreKeys = {},
+        ignorePattern = nil,
+    }, SaveManager)
     return self
 end
 
-function SaveManager:SetIgnoreIndexes(list)
-    for _, key in ipairs(list) do
-        self.Ignore[key] = true
+function SaveManager:SetFolder(path) self.folder = path end
+function SaveManager:SetIgnoreKeys(list) self.ignoreKeys = list or {} end
+function SaveManager:SetIgnorePattern(pat) self.ignorePattern = pat end
+
+local function can_write()
+    return type(writefile) == "function" and type(readfile) == "function"
+end
+
+local function safe_write(path, data)
+    if can_write() then
+        pcall(function() writefile(path, data) end)
+    else
+        _G.__Kour6anHubSaves = _G.__Kour6anHubSaves or {}
+        _G.__Kour6anHubSaves[path] = data
     end
 end
 
-function SaveManager:Save(name)
-    if not name or name == "" then return false, "No config name provided" end
-    
-    local data = {
-        objects = {}
-    }
-    
-    for idx, option in pairs(self.Options) do
-        if self.Ignore[idx] then 
-            -- Skip ignored options (using explicit check instead of continue)
+local function safe_read(path)
+    if can_write() then
+        if pcall(function() return readfile(path) end) then
+            return readfile(path)
         else
-            if self.Parser[option.Type] then
-                table.insert(data.objects, self.Parser[option.Type].Save(idx, option))
+            return nil
+        end
+    else
+        return _G.__Kour6anHubSaves and _G.__Kour6anHubSaves[path] or nil
+    end
+end
+
+function SaveManager:_walkRegistry()
+    local out = {}
+    if not self.lib or not self.lib._registry then return out end
+    for key, entry in pairs(self.lib._registry) do
+        if entry and entry.get and not table.find(self.ignoreKeys, key) then
+            if self.ignorePattern and tostring(key):match(self.ignorePattern) then
+                -- skip
+            else
+                local ok, val = pcall(entry.get)
+                if ok then out[key] = val end
             end
         end
     end
-    
-    local json = game:GetService("HttpService"):JSONEncode(data)
-    writefile(self.Folder .. "/" .. name .. ".json", json)
+    return out
+end
+
+function SaveManager:SaveConfig(name)
+    name = name or ("config_" .. tostring(os.time()))
+    local data = self:_walkRegistry()
+    local raw = HttpService:JSONEncode({meta={saved=os.time()}, data=data})
+    local path = self.folder .. "/" .. name .. ".json"
+    safe_write(path, raw)
     return true
 end
 
-function SaveManager:Load(name)
-    if not name then return false, "No config name provided" end
-    
-    local path = self.Folder .. "/" .. name .. ".json"
-    if not isfile(path) then return false, "Config file doesn't exist" end
-    
-    local success, data = pcall(function()
-        return game:GetService("HttpService"):JSONDecode(readfile(path))
-    end)
-    
-    if not success then return false, "Failed to parse config" end
-    
-    for _, optionData in ipairs(data.objects) do
-        if self.Parser[optionData.type] then
-            self.Parser[optionData.type].Load(optionData.idx, optionData)
+function SaveManager:ListConfigs()
+    if can_write() and type(listfiles) == "function" then
+        local files = listfiles(self.folder) or {}
+        local out = {}
+        for _, f in ipairs(files) do
+            if f:match("%.json$") then
+                local n = f:match("[^/\\]+%.json$"):gsub("%.json$","")
+                table.insert(out, n)
+            end
         end
-    end
-    
-    return true
-end
-
-function SaveManager:Delete(name)
-    if not name then return false, "No config name provided" end
-    
-    local path = self.Folder .. "/" .. name .. ".json"
-    if not isfile(path) then return false, "Config file doesn't exist" end
-    
-    delfile(path)
-    return true
-end
-
-function SaveManager:BuildFolderTree()
-    if not isfolder(self.Folder) then
-        makefolder(self.Folder)
-    end
-end
-
-function SaveManager:GetConfigList()
-    local configs = {}
-    if isfolder(self.Folder) then
-        for _, file in ipairs(listfiles(self.Folder)) do
-            if file:sub(-5) == ".json" then
-                local name = file:match("([^/]+)%.json$")
-                if name ~= "interface" then
-                    table.insert(configs, name)
+        return out
+    else
+        local out = {}
+        if _G.__Kour6anHubSaves then
+            for k,_ in pairs(_G.__Kour6anHubSaves) do
+                if k:match(self.folder) and k:match("%.json$") then
+                    local n = k:match("[^/\\]+%.json$"):gsub("%.json$","")
+                    table.insert(out, n)
                 end
             end
         end
+        return out
     end
-    return configs
 end
 
-function SaveManager:SetAutoload(name)
-    if not name then 
-        if isfile(self.Folder .. "/autoload.txt") then
-            delfile(self.Folder .. "/autoload.txt")
-        end
-        return
-    end
-    
-    writefile(self.Folder .. "/autoload.txt", name)
-end
+function SaveManager:LoadConfig(name)
+    local path = self.folder .. "/" .. name .. ".json"
+    local raw = safe_read(path)
+    if not raw then return false, "file not found" end
+    local ok, parsed = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not ok or not parsed or not parsed.data then return false, "invalid file" end
+    local data = parsed.data
 
-function SaveManager:GetAutoload()
-    if isfile(self.Folder .. "/autoload.txt") then
-        return readfile(self.Folder .. "/autoload.txt")
+    for key, value in pairs(data) do
+        local entry = self.lib._registry[key]
+        if entry and entry.set then
+            pcall(function() entry.set(value) end)
+        end
     end
-    return nil
-end
 
-function SaveManager:LoadAutoload()
-    local autoload = self:GetAutoload()
-    if autoload then
-        return self:Load(autoload)
-    end
-    return false, "No autoload config set"
+    return true
 end
-
-function SaveManager:BuildConfigSection(tab)
-    local section = tab:NewSection("Configuration")
-    
-    -- Config name input
-    local configNameInput = section:NewTextbox("Config Name", "", function() end)
-    self.Options["ConfigNameInput"] = {
-        Type = "Textbox",
-        Get = configNameInput.Get,
-        Set = configNameInput.Set
-    }
-    
-    -- Config list dropdown
-    local configList = self:GetConfigList()
-    local configDropdown = section:NewDropdown("Config List", configList, function(selected)
-        configNameInput:Set(selected)
-    end)
-    self.Options["ConfigDropdown"] = {
-        Type = "Dropdown",
-        Get = configDropdown.Get,
-        Set = configDropdown.Set,
-        Refresh = configDropdown.Refresh
-    }
-    
-    -- Save button
-    section:NewButton("Save Config", function()
-        local name = configNameInput:Get()
-        if name == "" then
-            self.Library:Notify("Error", "Please enter a config name")
-            return
-        end
-        
-        local success, err = self:Save(name)
-        if success then
-            self.Library:Notify("Success", "Config saved: " .. name)
-            configDropdown:Refresh(self:GetConfigList())
-        else
-            self.Library:Notify("Error", "Failed to save: " .. tostring(err))
-        end
-    end)
-    
-    -- Load button
-    section:NewButton("Load Config", function()
-        local name = configNameInput:Get()
-        if name == "" then
-            self.Library:Notify("Error", "Please select a config")
-            return
-        end
-        
-        local success, err = self:Load(name)
-        if success then
-            self.Library:Notify("Success", "Config loaded: " .. name)
-        else
-            self.Library:Notify("Error", "Failed to load: " .. tostring(err))
-        end
-    end)
-    
-    -- Delete button
-    section:NewButton("Delete Config", function()
-        local name = configNameInput:Get()
-        if name == "" then
-            self.Library:Notify("Error", "Please select a config")
-            return
-        end
-        
-        local success, err = self:Delete(name)
-        if success then
-            self.Library:Notify("Success", "Config deleted: " .. name)
-            configDropdown:Refresh(self:GetConfigList())
-            configNameInput:Set("")
-        else
-            self.Library:Notify("Error", "Failed to delete: " .. tostring(err))
-        end
-    end)
-    
-    -- Refresh button
-    section:NewButton("Refresh List", function()
-        configDropdown:Refresh(self:GetConfigList())
-    end)
-    
-    -- Autoload button
-    local autoloadBtn = section:NewButton("Set Autoload", function()
-        local name = configNameInput:Get()
-        if name == "" then
-            self.Library:Notify("Error", "Please select a config")
-            return
-        end
-        
-        self:SetAutoload(name)
-        self.Library:Notify("Success", "Autoload set to: " .. name)
-    end)
-    
-    -- Show current autoload
-    local autoload = self:GetAutoload()
-    if autoload then
-        section:NewLabel("Current Autoload: " .. autoload)
-    end
-    
-    -- Ignore UI elements in saving
-    self:SetIgnoreIndexes({"ConfigNameInput", "ConfigDropdown"})
-end
-
 return SaveManager
