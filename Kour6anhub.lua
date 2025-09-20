@@ -192,6 +192,51 @@ function Kour6anHub.CreateLib(title, themeName)
 
     makeDraggable(Main, Topbar)
 
+    -- Close button (✕)
+    local CloseBtn = Instance.new("TextButton")
+    CloseBtn.Size = UDim2.new(0, 32, 0, 28)
+    CloseBtn.Position = UDim2.new(1, -38, 0, 6)
+    CloseBtn.BackgroundColor3 = theme.TabBackground
+    CloseBtn.Text = "✕"
+    CloseBtn.Font = Enum.Font.GothamBold
+    CloseBtn.TextSize = 14
+    CloseBtn.TextColor3 = theme.Text
+    CloseBtn.AutoButtonColor = false
+    CloseBtn.Parent = Topbar
+    local cc = Instance.new("UICorner", CloseBtn)
+    cc.CornerRadius = UDim.new(0, 6)
+
+    CloseBtn.MouseButton1Click:Connect(function()
+        ScreenGui:Destroy()
+    end)
+
+    -- Minimize button (–)
+    local MinBtn = Instance.new("TextButton")
+    MinBtn.Size = UDim2.new(0, 32, 0, 28)
+    MinBtn.Position = UDim2.new(1, -74, 0, 6)
+    MinBtn.BackgroundColor3 = theme.TabBackground
+    MinBtn.Text = "–"
+    MinBtn.Font = Enum.Font.GothamBold
+    MinBtn.TextSize = 14
+    MinBtn.TextColor3 = theme.Text
+    MinBtn.AutoButtonColor = false
+    MinBtn.Parent = Topbar
+    local mc = Instance.new("UICorner", MinBtn)
+    mc.CornerRadius = UDim.new(0, 6)
+
+    local minimized = false
+    local oldSize = Main.Size
+    MinBtn.MouseButton1Click:Connect(function()
+        if minimized then
+            tween(Main, {Size = oldSize}, 0.18)
+            minimized = false
+        else
+            oldSize = Main.Size
+            tween(Main, {Size = UDim2.new(oldSize.X.Scale, oldSize.X.Offset, 0, 40)}, 0.18)
+            minimized = true
+        end
+    end)
+
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
@@ -1295,7 +1340,63 @@ function Kour6anHub.CreateLib(title, themeName)
     -- apply initial theme (ensures proper contrast)
     Window:SetTheme(themeName or "LightTheme")
 
+    local Window = {}
+    Window.ScreenGui = ScreenGui
+    Window.Main = Main
+    Window.Topbar = Topbar
+    Window.Title = Title
+    Window.CloseBtn = CloseBtn
+    Window.MinBtn = MinBtn
+
+    -- Keep ToggleUI keybind
+    Window._uiVisible = true
+    Window._toggleKey = Enum.KeyCode.RightControl
+    Window._storedPosition = Main.Position
+
+    function Window:Hide()
+        if not Window._uiVisible then return end
+        Window._storedPosition = Main.Position
+        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
+        task.delay(0.18, function()
+            if ScreenGui then
+                ScreenGui.Enabled = false
+            end
+        end)
+        Window._uiVisible = false
+    end
+
+    function Window:Show()
+        if Window._uiVisible then return end
+        if ScreenGui then ScreenGui.Enabled = true end
+        local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
+        tween(Main, {Position = target}, 0.18)
+        Window._uiVisible = true
+    end
+
+    function Window:ToggleUI()
+        if Window._uiVisible then
+            Window:Hide()
+        else
+            Window:Show()
+        end
+    end
+
+    function Window:SetToggleKey(keyEnum)
+        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
+            Window._toggleKey = keyEnum
+        end
+    end
+
+    UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Window._toggleKey then
+            Window:ToggleUI()
+        end
+    end)
+
     return Window
 end
+
+return Kour6anHub
 
 return Kour6anHub 
