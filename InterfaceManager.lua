@@ -91,5 +91,4 @@ function InterfaceManager:LoadInterface(name)
 
     return true
 end
-
 return InterfaceManager
