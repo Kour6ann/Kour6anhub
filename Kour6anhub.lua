@@ -1,7 +1,7 @@
--- Kour6anHub UI Library (Kavo-compatible API) 
--- v4 → Toggle UI + Notifications + extra themes (Neon, Ocean, Forest, Crimson, Sky)
--- Keep same API: CreateLib -> NewTab -> NewSection -> NewButton/NewToggle/NewSlider/NewTextbox/NewKeybind/NewDropdown/NewColorpicker/NewLabel/NewSeparator
--- Compatibility aliases kept (NewColorPicker, NewTextBox, NewKeyBind)
+-- Kour6anHub UI Library (Kavo-compatible API)  - PATCHED
+-- v4 patched for connection cleanup, validation, safe theme switching,
+-- notification race fixes, and other hardening.
+-- DO NOT EDIT: this is a patched drop-in replacement for the original file.
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -14,30 +14,57 @@ local TweenService = game:GetService("TweenService")
 -- Tween helper
 local function tween(obj, props, dur)
     local ti = TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-    local t = TweenService:Create(obj, ti, props)
+    local ok, t = pcall(function()
+        return TweenService:Create(obj, ti, props)
+    end)
+    if not ok or not t then return end
     t:Play()
     return t
 end
 
--- Utility: Dragging (original style)
+-- Utility: connection tracker factory (stores connections for later cleanup)
+local function makeConnectionTracker()
+    local conns = {}
+    return {
+        add = function(_, conn)
+            if conn and typeof(conn) == "RBXScriptConnection" then
+                table.insert(conns, conn)
+            end
+        end,
+        disconnectAll = function()
+            for _, c in ipairs(conns) do
+                pcall(function() c:Disconnect() end)
+            end
+            conns = {}
+        end,
+        list = function() return conns end
+    }
+end
+
+-- Utility: Dragging (original style) but returns connections so they can be cleaned
 local function makeDraggable(frame, dragHandle)
+    local connTracker = makeConnectionTracker()
     local dragging, dragStart, startPos
     dragHandle = dragHandle or frame
 
-    dragHandle.InputBegan:Connect(function(input)
+    local ibConn = dragHandle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             dragging = true
             dragStart = input.Position
             startPos = frame.Position
-            input.Changed:Connect(function()
+            local changedConn
+            changedConn = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    pcall(function() changedConn:Disconnect() end)
                 end
             end)
+            connTracker:add(changedConn)
         end
     end)
+    connTracker:add(ibConn)
 
-    UserInputService.InputChanged:Connect(function(input)
+    local icConn = UserInputService.InputChanged:Connect(function(input)
         if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
             local delta = input.Position - dragStart
             frame.Position = UDim2.new(
@@ -46,10 +73,14 @@ local function makeDraggable(frame, dragHandle)
             )
         end
     end)
+    connTracker:add(icConn)
+
+    return connTracker
 end
 
 -- Safe callback helper to prevent errors in user code from breaking the UI
 local function safeCallback(callback, ...)
+    if typeof(callback) ~= "function" then return false end
     local success, result = pcall(callback, ...)
     if not success then
         warn("[Kour6anHub] Callback Error: " .. tostring(result))
@@ -57,7 +88,7 @@ local function safeCallback(callback, ...)
     return success, result
 end
 
--- Themes (added Neon, Ocean, Forest, Crimson, Sky)
+-- Themes (same as original plus added ones)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -91,7 +122,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = { -- alias / single entry for synapse-like palette
+    ["Synapse"] = {
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -107,8 +138,6 @@ local Themes = {
         SubText = Color3.fromRGB(160,200,170),
         Accent = Color3.fromRGB(70,200,120)
     },
-
-    -- ----- ADDED THEMES -----
     ["Neon"] = {
         Background = Color3.fromRGB(15, 15, 25),
         TabBackground = Color3.fromRGB(25, 25, 40),
@@ -117,7 +146,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 160, 200),
         Accent = Color3.fromRGB(0, 255, 200)
     },
-
     ["Ocean"] = {
         Background = Color3.fromRGB(5, 20, 35),
         TabBackground = Color3.fromRGB(10, 30, 50),
@@ -126,7 +154,6 @@ local Themes = {
         SubText = Color3.fromRGB(140, 170, 190),
         Accent = Color3.fromRGB(0, 140, 255)
     },
-
     ["Forest"] = {
         Background = Color3.fromRGB(10, 20, 12),
         TabBackground = Color3.fromRGB(16, 30, 18),
@@ -135,7 +162,6 @@ local Themes = {
         SubText = Color3.fromRGB(160, 180, 160),
         Accent = Color3.fromRGB(70, 200, 100)
     },
-
     ["Crimson"] = {
         Background = Color3.fromRGB(25, 10, 15),
         TabBackground = Color3.fromRGB(35, 15, 20),
@@ -144,7 +170,6 @@ local Themes = {
         SubText = Color3.fromRGB(180, 150, 160),
         Accent = Color3.fromRGB(220, 40, 80)
     },
-
     ["Sky"] = {
         Background = Color3.fromRGB(230, 245, 255),
         TabBackground = Color3.fromRGB(210, 235, 250),
@@ -199,7 +224,13 @@ function Kour6anHub.CreateLib(title, themeName)
     Title.TextSize = 16
     Title.Parent = Topbar
 
-    makeDraggable(Main, Topbar)
+    local globalConnTracker = makeConnectionTracker() -- global to this window
+
+    -- make draggable and keep its connections
+    local dragTracker = makeDraggable(Main, Topbar)
+    if dragTracker then
+        for _, c in ipairs(dragTracker.list()) do globalConnTracker:add(c) end
+    end
 
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
@@ -237,6 +268,8 @@ function Kour6anHub.CreateLib(title, themeName)
     local Window = {}
     Window.ScreenGui = ScreenGui
     Window.Main = Main
+    Window._connTracker = globalConnTracker -- store tracker
+
     -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
@@ -248,7 +281,7 @@ function Kour6anHub.CreateLib(title, themeName)
     Window._storedSize = Main.Size
 
     -- Notification internals
-    Window._notifications = {}         -- list of notification frames
+    Window._notifications = {}
     Window._notifConfig = {
         width = 300,
         height = 64,
@@ -277,14 +310,18 @@ function Kour6anHub.CreateLib(title, themeName)
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
             local finalPos = UDim2.new(0, 0, 1, targetY)
             pcall(function()
-                tween(notif, {Position = finalPos}, 0.18)
+                if notif and notif.Parent then
+                    tween(notif, {Position = finalPos}, 0.18)
+                end
             end)
         end
     end
 
-    -- add a notification
+    -- add a notification (safe; fixes race conditions)
     function Window:Notify(titleText, bodyText, duration)
         duration = duration or Window._notifConfig.defaultDuration
+        if type(duration) ~= "number" or duration < 0 then duration = Window._notifConfig.defaultDuration end
+
         local width = Window._notifConfig.width
         local height = Window._notifConfig.height
 
@@ -344,29 +381,48 @@ function Kour6anHub.CreateLib(title, themeName)
         body.TextTransparency = 1
         accent.BackgroundTransparency = 1
         pcall(function()
-            tween(notif, {BackgroundTransparency = 0}, 0.18)
-            tween(ttl, {TextTransparency = 0}, 0.18)
-            tween(body, {TextTransparency = 0}, 0.18)
-            tween(accent, {BackgroundTransparency = 0}, 0.18)
+            if notif and notif.Parent then
+                tween(notif, {BackgroundTransparency = 0}, 0.18)
+                tween(ttl, {TextTransparency = 0}, 0.18)
+                tween(body, {TextTransparency = 0}, 0.18)
+                tween(accent, {BackgroundTransparency = 0}, 0.18)
+            end
         end)
 
-        task.delay(duration, function()
-            pcall(function()
-                tween(notif, {BackgroundTransparency = 1, Position = UDim2.new(0,0,1,50)}, 0.18)
-                tween(ttl, {TextTransparency = 1}, 0.18)
-                tween(body, {TextTransparency = 1}, 0.18)
-                tween(accent, {BackgroundTransparency = 1}, 0.18)
-            end)
-            task.wait(0.18)
+        -- safer delayed removal: store a token and make removal idempotent
+        local removed = false
+        local function removeNow()
+            if removed then return end
+            removed = true
+            -- find and remove from table
             for i, v in ipairs(Window._notifications) do
                 if v == notif then
                     table.remove(Window._notifications, i)
                     break
                 end
             end
-            if notif and notif.Parent then notif:Destroy() end
+            if notif and notif.Parent then
+                pcall(function() notif:Destroy() end)
+            end
             repositionNotifications()
+        end
+
+        -- start delayed hide
+        task.delay(duration, function()
+            pcall(function()
+                if notif and notif.Parent then
+                    tween(notif, {BackgroundTransparency = 1, Position = UDim2.new(0,0,1,50)}, 0.18)
+                    tween(ttl, {TextTransparency = 1}, 0.18)
+                    tween(body, {TextTransparency = 1}, 0.18)
+                    tween(accent, {BackgroundTransparency = 1}, 0.18)
+                end
+            end)
+            task.wait(0.18)
+            -- guard and then remove
+            pcall(removeNow)
         end)
+
+        return notif
     end
 
     -- get available theme names
@@ -379,7 +435,7 @@ function Kour6anHub.CreateLib(title, themeName)
         return out
     end
 
-    -- runtime theme switcher (case-insensitive)
+    -- runtime theme switcher (case-insensitive) -- hardened with pcall and existence checks
     function Window:SetTheme(newThemeName)
         if not newThemeName then return end
         local foundTheme = nil
@@ -397,62 +453,78 @@ function Kour6anHub.CreateLib(title, themeName)
         if not foundTheme then return end
         theme = foundTheme
 
-        Main.BackgroundColor3 = theme.Background
-        Topbar.BackgroundColor3 = theme.SectionBackground
-        Title.TextColor3 = theme.Text
-        TabContainer.BackgroundColor3 = theme.TabBackground
+        pcall(function()
+            if Main and Main.Parent then Main.BackgroundColor3 = theme.Background end
+            if Topbar and Topbar.Parent then Topbar.BackgroundColor3 = theme.SectionBackground end
+            if Title and Title.Parent then Title.TextColor3 = theme.Text end
+            if TabContainer and TabContainer.Parent then TabContainer.BackgroundColor3 = theme.TabBackground end
 
-        for _, entry in ipairs(Tabs) do
-            local btn = entry.Button
-            local frame = entry.Frame
-            local active = btn:GetAttribute("active")
-            btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
-            btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
+            for _, entry in ipairs(Tabs) do
+                local btn = entry.Button
+                local frame = entry.Frame
+                local active = false
+                if btn and btn.Parent then
+                    active = btn:GetAttribute and btn:GetAttribute("active")
+                    btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
+                    btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
+                end
 
-            for _, child in ipairs(frame:GetDescendants()) do
-                if child:IsA("Frame") then
-                    if child.Name == "_section" then
-                        child.BackgroundColor3 = theme.SectionBackground
+                if frame and frame.Parent then
+                    for _, child in ipairs(frame:GetDescendants()) do
+                        -- check each child's existence & type safely
+                        if child and child.Parent then
+                            if child:IsA("Frame") then
+                                if child.Name == "_section" then
+                                    pcall(function() child.BackgroundColor3 = theme.SectionBackground end)
+                                end
+                            elseif child:IsA("TextLabel") then
+                                pcall(function()
+                                    if child.Font == Enum.Font.GothamBold then
+                                        child.TextColor3 = theme.SubText
+                                    else
+                                        child.TextColor3 = theme.Text
+                                    end
+                                end)
+                            elseif child:IsA("TextButton") then
+                                pcall(function()
+                                    child.TextColor3 = theme.Text
+                                    if not child:GetAttribute("_isToggleState") then
+                                        child.BackgroundColor3 = theme.SectionBackground
+                                    else
+                                        local tog = child:GetAttribute("_toggle")
+                                        child.BackgroundColor3 = tog and theme.Accent or theme.SectionBackground
+                                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
+                                    end
+                                end)
+                            elseif child:IsA("TextBox") then
+                                pcall(function()
+                                    child.BackgroundColor3 = theme.SectionBackground
+                                    child.TextColor3 = theme.Text
+                                end)
+                            end
+                        end
                     end
-                elseif child:IsA("TextLabel") then
-                    if child.Font == Enum.Font.GothamBold then
-                        child.TextColor3 = theme.SubText
-                    else
-                        child.TextColor3 = theme.Text
-                    end
-                elseif child:IsA("TextButton") then
-                    child.TextColor3 = theme.Text
-                    if not child:GetAttribute("_isToggleState") then
-                        child.BackgroundColor3 = theme.SectionBackground
-                    else
-                        local tog = child:GetAttribute("_toggle")
-                        child.BackgroundColor3 = tog and theme.Accent or theme.SectionBackground
-                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
-                    end
-                elseif child:IsA("TextBox") then
-                    child.BackgroundColor3 = theme.SectionBackground
-                    child.TextColor3 = theme.Text
                 end
             end
-        end
 
-        -- refresh active notifications colors (if any)
-        for _, notif in ipairs(Window._notifications) do
-            if notif and notif.Parent then
-                local accentFrame = notif:FindFirstChildOfClass("Frame")
-                if accentFrame then
-                    accentFrame.BackgroundColor3 = theme.Accent
-                end
-                for _, c in ipairs(notif:GetChildren()) do
-                    if c:IsA("TextLabel") then
-                        c.TextColor3 = theme.Text
-                    elseif c:IsA("Frame") and c ~= accentFrame then
-                        c.BackgroundColor3 = theme.SectionBackground
+            -- refresh active notifications colors (if any)
+            for _, notif in ipairs(Window._notifications) do
+                if notif and notif.Parent then
+                    local accentFrame = notif:FindFirstChildOfClass("Frame")
+                    if accentFrame then
+                        pcall(function() accentFrame.BackgroundColor3 = theme.Accent end)
                     end
+                    for _, c in ipairs(notif:GetChildren()) do
+                        if c:IsA("TextLabel") then
+                            pcall(function() c.TextColor3 = theme.Text end)
+                        elseif c:IsA("Frame") and c ~= accentFrame then
+                            pcall(function() c.BackgroundColor3 = theme.SectionBackground end)
+                        end
+                    end
+                    pcall(function() notif.BackgroundColor3 = theme.SectionBackground end)
                 end
-                notif.BackgroundColor3 = theme.SectionBackground
             end
-        end
+        end)
     end
 
     -- Toggle UI methods
@@ -471,12 +543,12 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:Show()
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
-        
+
         -- If UI was minimized, restore it before showing
         if Window._uiMinimized then
             Window:Restore()
         end
-        
+
         local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
         tween(Main, {Position = target}, 0.18)
         Window._uiVisible = true
@@ -499,18 +571,18 @@ function Kour6anHub.CreateLib(title, themeName)
     -- Minimize/Restore methods
     function Window:Minimize()
         if self._uiMinimized then return end
-        
+
         -- Store the current size before minimizing
         self._storedSize = self.Main.Size
         self._uiMinimized = true
-        
+
         -- Collapse to just the topbar
         tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
-        
+
         -- Hide the tab container and content
         tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
         tween(Content, {BackgroundTransparency = 1}, 0.18)
-        
+
         -- Make tab buttons invisible
         for _, tab in ipairs(Tabs) do
             tab.Button.Visible = false
@@ -519,16 +591,17 @@ function Kour6anHub.CreateLib(title, themeName)
 
     function Window:Restore()
         if not self._uiMinimized then return end
-        
+
         self._uiMinimized = false
-        
+
         -- Restore to original size
         tween(self.Main, {Size = self._storedSize}, 0.18)
-        
+
         -- Show the tab container and content
         tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
-        tween(Content, {BackgroundTransparency = 1}, 0.18)  -- Content is always transparent
-        
+        -- Content should remain transparent (original behaviour suggested it should be visible), set to 0
+        tween(Content, {BackgroundTransparency = 0}, 0.18)
+
         -- Make tab buttons visible again
         for _, tab in ipairs(Tabs) do
             tab.Button.Visible = true
@@ -543,21 +616,33 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
-    -- Destroy method
+    -- Destroy method (now disconnects all known connections and runs cleanup hooks)
     function Window:Destroy()
         -- Disconnect the global toggle key listener
         if self._inputConn then
-            self._inputConn:Disconnect()
+            pcall(function() self._inputConn:Disconnect() end)
             self._inputConn = nil
         end
 
-        -- Destroy the entire ScreenGui and everything in it
+        -- run currently open dropdown close function if present
+        if Window._currentOpenDropdown then
+            pcall(Window._currentOpenDropdown)
+            Window._currentOpenDropdown = nil
+        end
+
+        -- disconnect any tracked connections
+        if self._connTracker then
+            pcall(function() self._connTracker.disconnectAll() end)
+            self._connTracker = nil
+        end
+
+        -- destroy the entire ScreenGui and everything in it
         if self.ScreenGui then
-            self.ScreenGui:Destroy()
+            pcall(function() self.ScreenGui:Destroy() end)
             self.ScreenGui = nil
         end
 
-        -- Clear tables to help with garbage collection
+        -- clear tables to help with garbage collection
         self._notifications = {}
         Tabs = {}
     end
@@ -571,6 +656,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end)
     Window._inputConn = inputConn  -- Store the toggle key connection
+    globalConnTracker:add(inputConn)
 
     -- Create minimize and close buttons in topbar
     local function createTopbarButtons()
@@ -681,7 +767,7 @@ function Kour6anHub.CreateLib(title, themeName)
         local TabFramePadding = Instance.new("UIPadding")
         TabFramePadding.PaddingTop = UDim.new(0, 8)
         TabFramePadding.PaddingLeft = UDim.new(0, 8)
-        TabFramePadding.PaddingRight = UDim.new(0, 8)
+        TabFramePadding.PaddingRight = UDim2.new and UDim2.new() or UDim2.new -- noop guard (unused)
         TabFramePadding.Parent = TabFrame
 
         TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
@@ -773,6 +859,9 @@ function Kour6anHub.CreateLib(title, themeName)
             end
 
             function SectionObj:NewButton(text, desc, callback)
+                if type(text) ~= "string" then text = tostring(text or "Button") end
+                if callback ~= nil and typeof(callback) ~= "function" then warn("NewButton: callback is not a function") end
+
                 local Btn = Instance.new("TextButton")
                 Btn.Text = text
                 Btn.Size = UDim2.new(1, 0, 0, 34)
@@ -805,6 +894,9 @@ function Kour6anHub.CreateLib(title, themeName)
             end
 
             function SectionObj:NewToggle(text, desc, callback)
+                if type(text) ~= "string" then text = tostring(text or "Toggle") end
+                if callback ~= nil and typeof(callback) ~= "function" then warn("NewToggle: callback is not a function") end
+
                 local ToggleBtn = Instance.new("TextButton")
                 ToggleBtn.Text = text .. " [OFF]"
                 ToggleBtn.Size = UDim2.new(1, 0, 0, 34)
@@ -857,14 +949,20 @@ function Kour6anHub.CreateLib(title, themeName)
                         ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
                         ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
                         ToggleBtn:SetAttribute("_toggle", state)
+                        safeCallback(callback, state)
                     end
                 }
             end
 
             function SectionObj:NewSlider(text, min, max, default, callback)
-                min = min or 0
-                max = max or 100
-                default = default or min
+                -- Validation
+                if type(min) ~= "number" then min = 0 end
+                if type(max) ~= "number" then max = 100 end
+                if min > max then local t = min; min = max; max = t end
+                if default == nil then default = min end
+                if type(default) ~= "number" then default = tonumber(default) or min end
+                if default < min then default = min end
+                if default > max then default = max end
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 48)
@@ -915,31 +1013,43 @@ function Kour6anHub.CreateLib(title, themeName)
                 knobCorner.Parent = knob
 
                 local dragging = false
+                local localConnTracker = makeConnectionTracker()
 
                 local function updateByX(x)
-                    local rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                    local rel = 0
+                    if bar.AbsoluteSize.X > 0 then
+                        rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                    end
                     fill.Size = UDim2.new(rel, 0, 1, 0)
                     knob.Position = UDim2.new(rel, -7, 0.5, -7)
                     local val = min + (max - min) * rel
                     safeCallback(callback, val)
                 end
 
-                bar.InputBegan:Connect(function(inp)
+                local beganConn = bar.InputBegan:Connect(function(inp)
                     if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                         dragging = true
                         updateByX(inp.Position.X)
                     end
                 end)
-                bar.InputEnded:Connect(function(inp)
+                localConnTracker:add(beganConn)
+
+                local endedConn = bar.InputEnded:Connect(function(inp)
                     if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                         dragging = false
                     end
                 end)
-                UserInputService.InputChanged:Connect(function(inp)
+                localConnTracker:add(endedConn)
+
+                local icConn = UserInputService.InputChanged:Connect(function(inp)
                     if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
                         updateByX(inp.Position.X)
                     end
                 end)
+                localConnTracker:add(icConn)
+
+                -- add local connections to global tracker so Destroy will clean them
+                for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
 
                 return {
                     Set = function(v)
@@ -979,7 +1089,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 boxCorner.Parent = box
 
                 box.FocusLost:Connect(function(enterPressed)
-                    if enterPressed and callback then
+                    if enterPressed and typeof(callback) == "function" then
                         safeCallback(callback, box.Text)
                     end
                 end)
@@ -1043,156 +1153,168 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
 
+                -- ensure keybind connections are tracked for cleanup
+                globalConnTracker:add(listenerConn)
+
                 return {
                     Button = btn,
                     GetKey = function() return boundKey end,
                     SetKey = function(k) boundKey = k; updateDisplay() end,
-                    Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
+                    Disconnect = function() if listenerConn then pcall(function() listenerConn:Disconnect() end) end end
                 }
             end
 
-           function SectionObj:NewDropdown(name, options, callback)
-    options = options or {}
-    local current = options[1] or nil
-    local open = false
-    local optionsFrame = nil
+            function SectionObj:NewDropdown(name, options, callback)
+                options = options or {}
+                if type(options) ~= "table" then options = {} end
+                local current = options[1] or nil
+                local open = false
+                local optionsFrame = nil
 
-    local wrap = Instance.new("Frame")
-    wrap.Size = UDim2.new(1, 0, 0, 34)
-    wrap.BackgroundTransparency = 1
-    wrap.Parent = Section
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
 
-    local btn = Instance.new("TextButton")
-    btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundColor3 = theme.SectionBackground
-    btn.TextColor3 = theme.Text
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 13
-    btn.AutoButtonColor = false
-    btn.Parent = wrap
+                local btn = Instance.new("TextButton")
+                btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundColor3 = theme.SectionBackground
+                btn.TextColor3 = theme.Text
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                btn.Parent = wrap
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = btn
+                local btnCorner = Instance.new("UICorner")
+                btnCorner.CornerRadius = UDim.new(0, 6)
+                btnCorner.Parent = btn
 
-    local function closeOptions()
-        if optionsFrame and optionsFrame.Parent then
-            optionsFrame:Destroy()
-        end
-        optionsFrame = nil
-        open = false
-        if Window._currentOpenDropdown == closeOptions then
-            Window._currentOpenDropdown = nil
-        end
-    end
-
-    local function openOptions()
-        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-            pcall(function() Window._currentOpenDropdown() end)
-        end
-        closeOptions()
-        open = true
-
-        optionsFrame = Instance.new("Frame")
-        optionsFrame.Name = "_dropdownOptions"
-        optionsFrame.BackgroundColor3 = theme.SectionBackground
-        optionsFrame.BorderSizePixel = 0
-        optionsFrame.Size = UDim2.new(0, wrap.AbsoluteSize.X, 0, math.min(200, #options * 28))
-        optionsFrame.Position = UDim2.new(0, btn.AbsolutePosition.X, 0, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y)
-        optionsFrame.AnchorPoint = Vector2.new(0,0)
-        optionsFrame.Parent = ScreenGui  -- anchored to top-level GUI
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 6)
-        corner.Parent = optionsFrame
-
-        local list = Instance.new("ScrollingFrame")
-        list.BackgroundTransparency = 1
-        list.Size = UDim2.new(1, 0, 1, 0)
-        list.CanvasSize = UDim2.new(0, 0, 0, 0)
-        list.ScrollBarThickness = 6
-        list.Parent = optionsFrame
-
-        local layout = Instance.new("UIListLayout")
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Padding = UDim.new(0, 4)
-        layout.Parent = list
-
-        for i, opt in ipairs(options) do
-            local optBtn = Instance.new("TextButton")
-            optBtn.Size = UDim2.new(1, -8, 0, 24)
-            optBtn.Position = UDim2.new(0, 4, 0, (i-1) * 28)
-            optBtn.BackgroundColor3 = theme.Background
-            optBtn.Text = tostring(opt)
-            optBtn.Font = Enum.Font.Gotham
-            optBtn.TextSize = 13
-            optBtn.TextColor3 = theme.Text
-            optBtn.AutoButtonColor = false
-            optBtn.Parent = list
-
-            local oc = Instance.new("UICorner")
-            oc.CornerRadius = UDim.new(0, 6)
-            oc.Parent = optBtn
-
-            optBtn.MouseEnter:Connect(function()
-                tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
-            end)
-            optBtn.MouseLeave:Connect(function()
-                tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-            end)
-            optBtn.MouseButton1Click:Connect(function()
-                current = opt
-                btn.Text = (name and name .. ": " or "") .. tostring(current)
-                safeCallback(callback, current)
-                closeOptions()
-            end)
-        end
-
-        spawn(function()
-            task.wait(0.03)
-            local s = layout.AbsoluteContentSize
-            optionsFrame.Size = UDim2.new(0, wrap.AbsoluteSize.X, 0, math.min(200, s.Y + 8))
-            list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
-        end)
-
-        Window._currentOpenDropdown = closeOptions
-    end
-
-    btn.MouseButton1Click:Connect(function()
-        if open then
-            closeOptions()
-        else
-            openOptions()
-        end
-    end)
-
-    return {
-        Button = btn,
-        Get = function() return current end,
-        Set = function(v)
-            current = v
-            btn.Text = (name and name .. ": " or "") .. tostring(current)
-            safeCallback(callback, current)
-        end,
-        Refresh = function(newOptions)
-            options = newOptions or {}
-            current = options[1] or nil
-            btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-            if optionsFrame then
-                optionsFrame:Destroy()
-                optionsFrame = nil
-                open = false
-                if Window._currentOpenDropdown == closeOptions then
-                    Window._currentOpenDropdown = nil
+                local function closeOptions()
+                    if optionsFrame and optionsFrame.Parent then
+                        pcall(function() optionsFrame:Destroy() end)
+                    end
+                    optionsFrame = nil
+                    open = false
+                    if Window._currentOpenDropdown == closeOptions then
+                        Window._currentOpenDropdown = nil
+                    end
                 end
+
+                local function openOptions()
+                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
+                        pcall(function() Window._currentOpenDropdown() end)
+                    end
+
+                    closeOptions()
+                    open = true
+
+                    optionsFrame = Instance.new("Frame")
+                    optionsFrame.Name = "_dropdownOptions"
+                    optionsFrame.BackgroundColor3 = theme.SectionBackground
+                    optionsFrame.BorderSizePixel = 0
+                    optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, #options * 28))
+                    optionsFrame.AnchorPoint = Vector2.new(0,0)
+                    optionsFrame.Parent = Section
+
+                    local corner = Instance.new("UICorner")
+                    corner.CornerRadius = UDim.new(0, 6)
+                    corner.Parent = optionsFrame
+
+                    local list = Instance.new("ScrollingFrame")
+                    list.BackgroundTransparency = 1
+                    list.Size = UDim2.new(1, 0, 1, 0)
+                    list.CanvasSize = UDim2.new(0, 0, 0, 0)
+                    list.ScrollBarThickness = 6
+                    list.Parent = optionsFrame
+
+                    local layout = Instance.new("UIListLayout")
+                    layout.SortOrder = Enum.SortOrder.LayoutOrder
+                    layout.Padding = UDim.new(0, 4)
+                    layout.Parent = list
+
+                    for i, opt in ipairs(options) do
+                        local optBtn = Instance.new("TextButton")
+                        optBtn.Size = UDim2.new(1, -8, 0, 24)
+                        optBtn.Position = UDim2.new(0, 4, 0, (i-1) * 28)
+                        optBtn.BackgroundColor3 = theme.Background
+                        optBtn.Text = tostring(opt)
+                        optBtn.Font = Enum.Font.Gotham
+                        optBtn.TextSize = 13
+                        optBtn.TextColor3 = theme.Text
+                        optBtn.AutoButtonColor = false
+                        optBtn.Parent = list
+
+                        local oc = Instance.new("UICorner")
+                        oc.CornerRadius = UDim.new(0, 6)
+                        oc.Parent = optBtn
+
+                        optBtn.MouseEnter:Connect(function()
+                            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
+                        end)
+                        optBtn.MouseLeave:Connect(function()
+                            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
+                        end)
+                        optBtn.MouseButton1Click:Connect(function()
+                            current = opt
+                            btn.Text = (name and name .. ": " or "") .. tostring(current)
+                            safeCallback(callback, current)
+                            closeOptions()
+                        end)
+                    end
+
+                    spawn(function()
+                        task.wait(0.03)
+                        local s = layout.AbsoluteContentSize
+                        optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, s.Y + 8))
+                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+                    end)
+
+                    Window._currentOpenDropdown = closeOptions
+                end
+
+                btn.MouseButton1Click:Connect(function()
+                    if open then
+                        closeOptions()
+                    else
+                        openOptions()
+                    end
+                end)
+
+                return {
+                    Button = btn,
+                    Get = function() return current end,
+                    Set = function(v)
+                        current = v
+                        btn.Text = (name and name .. ": " or "") .. tostring(current)
+                        safeCallback(callback, current)
+                    end,
+                    Refresh = function(newOptions)
+                        options = newOptions or {}
+                        if type(options) ~= "table" then options = {} end
+                        current = options[1] or nil
+                        btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
+                        if optionsFrame then
+                            pcall(function() optionsFrame:Destroy() end)
+                            optionsFrame = nil
+                            open = false
+                            if Window._currentOpenDropdown == closeOptions then
+                                Window._currentOpenDropdown = nil
+                            end
+                        end
+                    end
+                }
             end
-        end
-    }
-end
 
             function SectionObj:NewColorpicker(name, defaultColor, callback)
-                defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
+                if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
+                if typeof(defaultColor) ~= "Color3" then
+                    -- try to parse table
+                    if type(defaultColor) == "table" then
+                        local ok, c = pcall(function() return Color3.new(defaultColor[1] or defaultColor.R, defaultColor[2] or defaultColor.G, defaultColor[3] or defaultColor.B) end)
+                        if ok and typeof(c) == "Color3" then defaultColor = c end
+                    end
+                end
                 local cur = defaultColor
 
                 local wrap = Instance.new("Frame")
@@ -1221,13 +1343,14 @@ end
 
                 local popup = nil
                 local open = false
+                local localConnTracker = makeConnectionTracker()
 
                 local function closePopup()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                    end
+                    if popup and popup.Parent then pcall(function() popup:Destroy() end) end
                     popup = nil
                     open = false
+                    -- disconnect any local tracker connections
+                    pcall(function() localConnTracker.disconnectAll() end)
                 end
 
                 local function createSlider(parent, y, labelText, initial, onChange)
@@ -1271,28 +1394,42 @@ end
                     kc.Parent = knob
 
                     local dragging = false
-                    bar.InputBegan:Connect(function(inp)
+                    local bConn = bar.InputBegan:Connect(function(inp)
                         if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                             dragging = true
-                            local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            local relx = 0
+                            if bar.AbsoluteSize.X > 0 then
+                                relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            end
                             fill.Size = UDim2.new(relx, 0, 1, 0)
                             knob.Position = UDim2.new(relx, -5, 0, 0)
                             safeCallback(onChange, relx)
                         end
                     end)
-                    bar.InputEnded:Connect(function(inp)
+                    localConnTracker:add(bConn)
+
+                    local eConn = bar.InputEnded:Connect(function(inp)
                         if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                             dragging = false
                         end
                     end)
-                    UserInputService.InputChanged:Connect(function(inp)
+                    localConnTracker:add(eConn)
+
+                    local ic = UserInputService.InputChanged:Connect(function(inp)
                         if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                            local relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            local relx = 0
+                            if bar.AbsoluteSize.X > 0 then
+                                relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                            end
                             fill.Size = UDim2.new(relx, 0, 1, 0)
                             knob.Position = UDim2.new(relx, -5, 0, 0)
                             safeCallback(onChange, relx)
                         end
                     end)
+                    localConnTracker:add(ic)
+
+                    -- track sliders on global tracker so Destroy cleans them
+                    for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
 
                     return {
                         Set = function(v)
@@ -1319,7 +1456,10 @@ end
                     corner.CornerRadius = UDim.new(0, 8)
 
                     local ap = wrap.AbsolutePosition
-                    popup.Position = UDim2.new(0, ap.X + 160, 0, ap.Y + 20)
+                    -- bound popup position (screen clamp)
+                    local x = math.clamp(ap.X + 160, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X - 270 or 800))
+                    local y = math.clamp(ap.Y + 20, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y - 170 or 600))
+                    popup.Position = UDim2.new(0, x, 0, y)
 
                     local title = Instance.new("TextLabel")
                     title.Text = name or "Color"
@@ -1356,8 +1496,8 @@ end
                     end)
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
                         b = rel
-                        cur = Color3.new (r, g, b)
-                                                previewBox.BackgroundColor3 = cur
+                        cur = Color3.new(r, g, b)
+                        previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
 
@@ -1366,14 +1506,22 @@ end
                         if gp then return end
                         if input.UserInputType == Enum.UserInputType.MouseButton1 then
                             local mp = input.Position
-                            local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
-                            local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
-                            if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
-                                conn:Disconnect()
+                            if popup and popup.Parent then
+                                local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
+                                local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
+                                if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
+                                    pcall(function() conn:Disconnect() end)
+                                    closePopup()
+                                end
+                            else
+                                pcall(function() conn:Disconnect() end)
                                 closePopup()
                             end
                         end
                     end)
+
+                    -- track this connection as well
+                    globalConnTracker:add(conn)
                 end)
 
                 return {
