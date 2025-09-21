@@ -19,18 +19,6 @@ local function tween(obj, props, dur)
     return t
 end
 
--- Debounce helper for slider updates
-local function createDebouncedCallback(callback, delay)
-    local lastCall = 0
-    return function(...)
-        local now = tick()
-        if now - lastCall >= delay then
-            lastCall = now
-            callback(...)
-        end
-    end
-end
-
 -- Utility: Dragging (original style)
 local function makeDraggable(frame, dragHandle)
     local dragging, dragStart, startPos
@@ -393,11 +381,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     -- runtime theme switcher (case-insensitive)
     function Window:SetTheme(newThemeName)
-        if not newThemeName then 
-            warn("[Kour6anHub] Theme not provided")
-            return 
-        end
-        
+        if not newThemeName then return end
         local foundTheme = nil
         if Themes[newThemeName] then
             foundTheme = Themes[newThemeName]
@@ -410,12 +394,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
             end
         end
-        
-        if not foundTheme then 
-            warn("[Kour6anHub] Theme not found: " .. tostring(newThemeName))
-            return 
-        end
-        
+        if not foundTheme then return end
         theme = foundTheme
 
         Main.BackgroundColor3 = theme.Background
@@ -528,13 +507,13 @@ function Kour6anHub.CreateLib(title, themeName)
         -- Collapse to just the topbar
         tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
         
-        -- Hide the tab container and content using transparency instead of visibility
-        tween(TabContainer, {BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, -40)}, 0.18)
-        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, -40), Position = UDim2.new(0, 0, 0, 40)}, 0.18)
+        -- Hide the tab container and content
+        tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)
         
-        -- Make tab buttons invisible by setting their size to zero
+        -- Make tab buttons invisible
         for _, tab in ipairs(Tabs) do
-            tween(tab.Button, {Size = UDim2.new(0, 0, 0, 0)}, 0.18)
+            tab.Button.Visible = false
         end
     end
 
@@ -547,12 +526,12 @@ function Kour6anHub.CreateLib(title, themeName)
         tween(self.Main, {Size = self._storedSize}, 0.18)
         
         -- Show the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 0, Size = UDim2.new(0, 150, 1, -40)}, 0.18)
-        tween(Content, {BackgroundTransparency = 1, Size = UDim2.new(1, -160, 1, -40), Position = UDim2.new(0, 160, 0, 40)}, 0.18)
+        tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
+        tween(Content, {BackgroundTransparency = 1}, 0.18)  -- Content is always transparent
         
         -- Make tab buttons visible again
         for _, tab in ipairs(Tabs) do
-            tween(tab.Button, {Size = UDim2.new(1, -20, 0, 40)}, 0.18)
+            tab.Button.Visible = true
         end
     end
 
@@ -570,15 +549,6 @@ function Kour6anHub.CreateLib(title, themeName)
         if self._inputConn then
             self._inputConn:Disconnect()
             self._inputConn = nil
-        end
-
-        -- Clean up keybind listeners
-        for _, tab in ipairs(Tabs) do
-            for _, element in ipairs(tab.Frame:GetDescendants()) do
-                if element:GetAttribute("_isKeybind") and element.Disconnect then
-                    pcall(function() element:Disconnect() end)
-                end
-            end
         end
 
         -- Destroy the entire ScreenGui and everything in it
@@ -896,9 +866,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 max = max or 100
                 default = default or min
 
-                -- Debounce the callback to prevent excessive calls
-                local debouncedCallback = createDebouncedCallback(callback, 0.1)
-
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 48)
                 wrap.BackgroundTransparency = 1
@@ -954,7 +921,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     fill.Size = UDim2.new(rel, 0, 1, 0)
                     knob.Position = UDim2.new(rel, -7, 0.5, -7)
                     local val = min + (max - min) * rel
-                    debouncedCallback(val)
+                    safeCallback(callback, val)
                 end
 
                 bar.InputBegan:Connect(function(inp)
@@ -982,7 +949,7 @@ function Kour6anHub.CreateLib(title, themeName)
                         end
                         fill.Size = UDim2.new(rel, 0, 1, 0)
                         knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                        debouncedCallback(min + (max - min) * rel)
+                        safeCallback(callback, min + (max - min) * rel)
                     end,
                     Get = function()
                         return min + (max - min) * fill.Size.X.Scale
@@ -1041,7 +1008,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 btn.TextSize = 13
                 btn.AutoButtonColor = false
                 btn.Parent = wrap
-                btn:SetAttribute("_isKeybind", true)
 
                 local btnCorner = Instance.new("UICorner")
                 btnCorner.CornerRadius = UDim.new(0, 6)
@@ -1049,37 +1015,10 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local capturing = false
                 local boundKey = defaultKey
-                local listenerConn
 
                 local function updateDisplay()
                     local kName = boundKey and (tostring(boundKey):gsub("^Enum.KeyCode%.","")) or "None"
                     btn.Text = (desc and desc .. " : " or "") .. "[" .. kName .. "]"
-                end
-
-                local function disconnectListener()
-                    if listenerConn then
-                        listenerConn:Disconnect()
-                        listenerConn = nil
-                    end
-                end
-
-                local function setupListener()
-                    disconnectListener()
-                    listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                        if gameProcessed then return end
-                        if capturing then
-                            if input.UserInputType == Enum.UserInputType.Keyboard then
-                                boundKey = input.KeyCode
-                                capturing = false
-                                updateDisplay()
-                            end
-                            return
-                        end
-
-                        if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
-                            safeCallback(callback)
-                        end
-                    end)
                 end
 
                 btn.MouseButton1Click:Connect(function()
@@ -1087,25 +1026,30 @@ function Kour6anHub.CreateLib(title, themeName)
                     btn.Text = (desc and desc .. " : " or "") .. "[Press a key...]"
                 end)
 
-                setupListener()
+                local listenerConn
+                listenerConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                    if gameProcessed then return end
+                    if capturing then
+                        if input.UserInputType == Enum.UserInputType.Keyboard then
+                            boundKey = input.KeyCode
+                            capturing = false
+                            updateDisplay()
+                        end
+                        return
+                    end
 
--- Store the connection for cleanup
-local keybindObj = {
-    Button = btn,
-    GetKey = function() return boundKey end,
-    SetKey = function(k) 
-        boundKey = k
-        updateDisplay()
-    end,
-    Disconnect = disconnectListener
-}
+                    if boundKey and input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == boundKey then
+                        safeCallback(callback)
+                    end
+                end)
 
--- Add a destructor method
-wrap.Destroying:Connect(function()
-    if disconnectListener and type(disconnectListener) == "function" then
-        disconnectListener()
-    end
-end)
+                return {
+                    Button = btn,
+                    GetKey = function() return boundKey end,
+                    SetKey = function(k) boundKey = k; updateDisplay() end,
+                    Disconnect = function() if listenerConn then listenerConn:Disconnect() end end
+                }
+            end
 
             function SectionObj:NewDropdown(name, options, callback)
                 options = options or {}
@@ -1158,7 +1102,6 @@ end)
                     optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, #options * 28))
                     optionsFrame.AnchorPoint = Vector2.new(0,0)
                     optionsFrame.Parent = Section
-                    optionsFrame.ZIndex = 10  -- Ensure dropdown appears above other elements
 
                     local corner = Instance.new("UICorner")
                     corner.CornerRadius = UDim.new(0, 6)
@@ -1170,7 +1113,6 @@ end)
                     list.CanvasSize = UDim2.new(0, 0, 0, 0)
                     list.ScrollBarThickness = 6
                     list.Parent = optionsFrame
-                    list.ZIndex = 11
 
                     local layout = Instance.new("UIListLayout")
                     layout.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1188,7 +1130,6 @@ end)
                         optBtn.TextColor3 = theme.Text
                         optBtn.AutoButtonColor = false
                         optBtn.Parent = list
-                        optBtn.ZIndex = 12
 
                         local oc = Instance.new("UICorner")
                         oc.CornerRadius = UDim.new(0, 6)
@@ -1212,7 +1153,7 @@ end)
                         task.wait(0.03)
                         local s = layout.AbsoluteContentSize
                         optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, s.Y + 8))
-                        list.CanCanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
                     end)
 
                     Window._currentOpenDropdown = closeOptions
@@ -1253,8 +1194,6 @@ end)
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 defaultColor = defaultColor or Color3.fromRGB(255, 120, 0)
                 local cur = defaultColor
-                local popup = nil
-                local rSlider, gSlider, bSlider
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -1280,10 +1219,15 @@ end)
                 pc.CornerRadius = UDim.new(0, 6)
                 pc.Parent = preview
 
-                local function updateSliders(r, g, b)
-                    if rSlider then rSlider:Set(r) end
-                    if gSlider then gSlider:Set(g) end
-                    if bSlider then gSlider:Set(b) end
+                local popup = nil
+                local open = false
+
+                local function closePopup()
+                    if popup and popup.Parent then
+                        popup:Destroy()
+                    end
+                    popup = nil
+                    open = false
                 end
 
                 local function createSlider(parent, y, labelText, initial, onChange)
@@ -1361,18 +1305,16 @@ end)
                 end
 
                 btn.MouseButton1Click:Connect(function()
-                    if popup and popup.Parent then
-                        popup:Destroy()
-                        popup = nil
+                    if open then
+                        closePopup()
                         return
                     end
-                    
+                    open = true
                     popup = Instance.new("Frame")
                     popup.Size = UDim2.new(0, 260, 0, 160)
                     popup.BackgroundColor3 = theme.SectionBackground
                     popup.BorderSizePixel = 0
                     popup.Parent = ScreenGui
-                    popup.ZIndex = 20
                     local corner = Instance.new("UICorner", popup)
                     corner.CornerRadius = UDim.new(0, 8)
 
@@ -1389,35 +1331,33 @@ end)
                     title.TextSize = 13
                     title.TextXAlignment = Enum.TextXAlignment.Left
                     title.Parent = popup
-                    title.ZIndex = 21
 
                     local previewBox = Instance.new("Frame")
                     previewBox.Size = UDim2.new(0, 36, 0, 36)
                     previewBox.Position = UDim2.new(1, -44, 0, 8)
                     previewBox.BackgroundColor3 = cur
                     previewBox.Parent = popup
-                    previewBox.ZIndex = 21
                     local pc2 = Instance.new("UICorner", previewBox)
                     pc2.CornerRadius = UDim.new(0, 6)
 
                     local r,g,b = cur.R, cur.G, cur.B
 
-                    rSlider = createSlider(popup, 34, "R", r, function(rel)
+                    local rSlider = createSlider(popup, 34, "R", r, function(rel)
                         r = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    gSlider = createSlider(popup, 66, "G", g, function(rel)
+                    local gSlider = createSlider(popup, 66, "G", g, function(rel)
                         g = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
-                    bSlider = createSlider(popup, 98, "B", b, function(rel)
+                    local bSlider = createSlider(popup, 98, "B", b, function(rel)
                         b = rel
                         cur = Color3.new (r, g, b)
-                        previewBox.BackgroundColor3 = cur
+                                                previewBox.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
 
@@ -1430,8 +1370,7 @@ end)
                             local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
                             if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
                                 conn:Disconnect()
-                                popup:Destroy()
-                                popup = nil
+                                closePopup()
                             end
                         end
                     end)
@@ -1450,9 +1389,6 @@ end)
                             cur = c
                         end
                         preview.BackgroundColor3 = cur
-                        if popup and popup.Parent then
-                            updateSliders(cur.R, cur.G, cur.B)
-                        end
                         safeCallback(callback, cur)
                     end
                 }
