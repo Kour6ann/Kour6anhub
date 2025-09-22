@@ -1188,143 +1188,142 @@ end
             end
 
             function SectionObj:NewDropdown(name, options, callback)
-                options = options or {}
-                if type(options) ~= "table" then options = {} end
-                local current = options[1] or nil
-                local open = false
-                local optionsFrame = nil
+    options = options or {}
+    if type(options) ~= "table" then options = {} end
+    local current = options[1] or nil
+    local open = false
+    local optionsFrame = nil
 
-                local wrap = Instance.new("Frame")
-                wrap.Size = UDim2.new(1, 0, 0, 34)
-                wrap.BackgroundTransparency = 1
-                wrap.Parent = Section
+    local wrap = Instance.new("Frame")
+    wrap.Size = UDim2.new(1, 0, 0, 34)
+    wrap.BackgroundTransparency = 1
+    wrap.Parent = Section
 
-                local btn = Instance.new("TextButton")
-                btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-                btn.Size = UDim2.new(1, 0, 1, 0)
-                btn.BackgroundColor3 = theme.SectionBackground
-                btn.TextColor3 = theme.Text
-                btn.Font = Enum.Font.Gotham
-                btn.TextSize = 13
-                btn.AutoButtonColor = false
-                btn.Parent = wrap
+    local btn = Instance.new("TextButton")
+    btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundColor3 = theme.SectionBackground
+    btn.TextColor3 = theme.Text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.AutoButtonColor = false
+    btn.Parent = wrap
 
-                local btnCorner = Instance.new("UICorner")
-                btnCorner.CornerRadius = UDim.new(0, 6)
-                btnCorner.Parent = btn
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
 
-               local MAX_DROPDOWN_HEIGHT = 200 -- max visible height before scrolling
-local ORIGINAL_WRAP_HEIGHT = 34
+    local MAX_DROPDOWN_HEIGHT = 200
 
-local TweenService = game:GetService("TweenService")
-
-local function safeTweenSize(inst, newSize, dur)
-    local ok, err = pcall(function()
-        local info = TweenInfo.new(dur or 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-        local tween = TweenService:Create(inst, info, {Size = newSize})
-        tween:Play()
-    end)
-    if not ok then
-        -- fallback if custom tween function not available or error
-        inst.Size = newSize
-    end
-end
-
-local function closeOptions()
-    if optionsFrame and optionsFrame.Parent then
-        pcall(function() optionsFrame:Destroy() end)
-    end
-    optionsFrame = nil
-    open = false
-
-    -- smoothly restore wrap to original height
-    safeTweenSize(wrap, UDim2.new(1, 0, 0, ORIGINAL_WRAP_HEIGHT), 0.12)
-
-    if Window._currentOpenDropdown == closeOptions then
-        Window._currentOpenDropdown = nil
-    end
-end
-
-local function openOptions()
-    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-        pcall(function() Window._currentOpenDropdown() end)
+    -- tween helper
+    local function tween(obj, props, time)
+        game:GetService("TweenService"):Create(obj, TweenInfo.new(time or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
     end
 
-    closeOptions()
-    open = true
+    local function closeOptions()
+        if optionsFrame and optionsFrame.Parent then
+            optionsFrame:Destroy()
+        end
+        optionsFrame = nil
+        open = false
+        wrap.Size = UDim2.new(1, 0, 0, 34)
+        if Window._currentOpenDropdown == closeOptions then
+            Window._currentOpenDropdown = nil
+        end
+    end
 
-    optionsFrame = Instance.new("Frame")
-    optionsFrame.Name = "_dropdownOptions"
-    optionsFrame.BackgroundColor3 = theme.SectionBackground
-    optionsFrame.BorderSizePixel = 0
-    optionsFrame.AnchorPoint = Vector2.new(0, 0)
-    optionsFrame.Position = UDim2.new(0, 0, 0, ORIGINAL_WRAP_HEIGHT)
-    optionsFrame.Size = UDim2.new(1, 0, 0, 0) -- height set after measuring
-    optionsFrame.Parent = wrap
-    optionsFrame.ClipsDescendants = false
+    local function openOptions()
+        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
+            Window._currentOpenDropdown()
+        end
 
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 6)
-    corner.Parent = optionsFrame
+        closeOptions()
+        open = true
 
-    local list = Instance.new("ScrollingFrame")
-    list.BackgroundTransparency = 1
-    list.Size = UDim2.new(1, 0, 1, 0)
-    list.CanvasSize = UDim2.new(0, 0, 0, 0)
-    list.ScrollBarThickness = 6
-    list.BorderSizePixel = 0
-    list.Parent = optionsFrame
+        optionsFrame = Instance.new("Frame")
+        optionsFrame.Name = "_dropdownOptions"
+        optionsFrame.BackgroundColor3 = theme.SectionBackground
+        optionsFrame.BorderSizePixel = 0
+        optionsFrame.Position = UDim2.new(0, 0, 0, 34) -- just under the button
+        optionsFrame.Size = UDim2.new(1, 0, 0, 0)
+        optionsFrame.Parent = wrap
 
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding = UDim.new(0, 4)
-    layout.Parent = list
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 6)
+        corner.Parent = optionsFrame
 
-    for i, opt in ipairs(options) do
-        local optBtn = Instance.new("TextButton")
-        optBtn.Size = UDim2.new(1, -8, 0, 24)
-        optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
-        optBtn.BackgroundColor3 = theme.Background
-        optBtn.Text = tostring(opt)
-        optBtn.Font = Enum.Font.Gotham
-        optBtn.TextSize = 13
-        optBtn.TextColor3 = theme.Text
-        optBtn.AutoButtonColor = false
-        optBtn.Parent = list
+        local list = Instance.new("ScrollingFrame")
+        list.BackgroundTransparency = 1
+        list.Size = UDim2.new(1, 0, 1, 0)
+        list.CanvasSize = UDim2.new(0, 0, 0, 0)
+        list.ScrollBarThickness = 6
+        list.BorderSizePixel = 0
+        list.Parent = optionsFrame
 
-        local oc = Instance.new("UICorner")
-        oc.CornerRadius = UDim.new(0, 6)
-        oc.Parent = optBtn
+        local layout = Instance.new("UIListLayout")
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 4)
+        layout.Parent = list
 
-        optBtn.MouseEnter:Connect(function()
-            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
+        for i, opt in ipairs(options) do
+            local optBtn = Instance.new("TextButton")
+            optBtn.Size = UDim2.new(1, -8, 0, 24)
+            optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
+            optBtn.BackgroundColor3 = theme.Background
+            optBtn.Text = tostring(opt)
+            optBtn.Font = Enum.Font.Gotham
+            optBtn.TextSize = 13
+            optBtn.TextColor3 = theme.Text
+            optBtn.AutoButtonColor = false
+            optBtn.Parent = list
+
+            local oc = Instance.new("UICorner")
+            oc.CornerRadius = UDim.new(0, 6)
+            oc.Parent = optBtn
+
+            optBtn.MouseEnter:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
+            end)
+            optBtn.MouseLeave:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
+            end)
+            optBtn.MouseButton1Click:Connect(function()
+                current = opt
+                btn.Text = (name and name .. ": " or "") .. tostring(current)
+                if callback then
+                    pcall(callback, current)
+                end
+                closeOptions()
+            end)
+        end
+
+        task.delay(0.03, function()
+            local s = layout.AbsoluteContentSize
+            local contentHeight = s.Y + 8
+            local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
+
+            tween(optionsFrame, {Size = UDim2.new(1, 0, 0, height)}, 0.15)
+            list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+            wrap.Size = UDim2.new(1, 0, 0, 34 + height)
         end)
-        optBtn.MouseLeave:Connect(function()
-            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-        end)
-        optBtn.MouseButton1Click:Connect(function()
-            current = opt
-            btn.Text = (name and name .. ": " or "") .. tostring(current)
-            safeCallback(callback, current)
+
+        Window._currentOpenDropdown = closeOptions
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        if open then
             closeOptions()
-        end)
-    end
-
-    -- Wait for layout, then size properly and expand wrap to push siblings (with tween)
-    spawn(function()
-        task.wait(0.03)
-        local s = layout.AbsoluteContentSize
-        local contentHeight = s.Y + 8
-        local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
-
-        optionsFrame.Size = UDim2.new(1, 0, 0, height)
-        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
-
-        local targetWrap = UDim2.new(1, 0, 0, ORIGINAL_WRAP_HEIGHT + height)
-        safeTweenSize(wrap, targetWrap, 0.12)
+        else
+            openOptions()
+        end
     end)
 
-    Window._currentOpenDropdown = closeOptions
+    return {
+        Set = function(value)
+            current = value
+            btn.Text = (name and name .. ": " or "") .. tostring(current)
+        end
+    }
 end
 
 
