@@ -665,7 +665,7 @@ function Kour6anHub.CreateLib(title, themeName)
         minBtn.Position = UDim2.new(1, -80, 0, 6)
         minBtn.AnchorPoint = Vector2.new(0,0)
         minBtn.BackgroundColor3 = theme.TabBackground
-        minBtn.Text = "—"
+        minBtn.Text = "-"
         minBtn.Font = Enum.Font.Gotham
         minBtn.TextSize = 14
         minBtn.TextColor3 = theme.Text
