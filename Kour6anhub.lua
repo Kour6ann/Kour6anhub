@@ -813,6 +813,21 @@ end
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
+         -- 🔥 Auto-select the first tab if none is active yet
+    if not Window._currentTab then
+        Window._currentTab = TabButton
+        for _, t in ipairs(Tabs) do
+            t.Button:SetAttribute("active", false)
+            t.Button.BackgroundColor3 = theme.SectionBackground
+            t.Button.TextColor3 = theme.Text
+            t.Frame.Visible = false
+        end
+        TabButton:SetAttribute("active", true)
+        TabButton.BackgroundColor3 = theme.Accent
+        TabButton.TextColor3 = Color3.fromRGB(255,255,255)
+        TabFrame.Visible = true
+    end
+
         local TabObj = {}
 
         function TabObj:NewSection(sectionName)
