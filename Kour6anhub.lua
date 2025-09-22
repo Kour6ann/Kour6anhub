@@ -1,7 +1,6 @@
--- Kour6anHub UI Library (Kavo-compatible API)  - PATCHED
+-- Kour6anHub UI Library
 -- v4 patched for connection cleanup, validation, safe theme switching,
 -- notification race fixes, and other hardening.
--- DO NOT EDIT: this is a patched drop-in replacement for the original file.
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
