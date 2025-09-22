@@ -1214,6 +1214,21 @@ end
                 btnCorner.Parent = btn
 
                local MAX_DROPDOWN_HEIGHT = 200 -- max visible height before scrolling
+local ORIGINAL_WRAP_HEIGHT = 34
+
+local TweenService = game:GetService("TweenService")
+
+local function safeTweenSize(inst, newSize, dur)
+    local ok, err = pcall(function()
+        local info = TweenInfo.new(dur or 0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+        local tween = TweenService:Create(inst, info, {Size = newSize})
+        tween:Play()
+    end)
+    if not ok then
+        -- fallback if custom tween function not available or error
+        inst.Size = newSize
+    end
+end
 
 local function closeOptions()
     if optionsFrame and optionsFrame.Parent then
@@ -1221,8 +1236,10 @@ local function closeOptions()
     end
     optionsFrame = nil
     open = false
-    -- restore wrap to its original height
-    wrap.Size = UDim2.new(1, 0, 0, 34)
+
+    -- smoothly restore wrap to original height
+    safeTweenSize(wrap, UDim2.new(1, 0, 0, ORIGINAL_WRAP_HEIGHT), 0.12)
+
     if Window._currentOpenDropdown == closeOptions then
         Window._currentOpenDropdown = nil
     end
@@ -1241,12 +1258,10 @@ local function openOptions()
     optionsFrame.BackgroundColor3 = theme.SectionBackground
     optionsFrame.BorderSizePixel = 0
     optionsFrame.AnchorPoint = Vector2.new(0, 0)
-    optionsFrame.Size = UDim2.new(1, 0, 0, 0) -- we'll set height after measuring
-    optionsFrame.ClipsDescendants = false
+    optionsFrame.Position = UDim2.new(0, 0, 0, ORIGINAL_WRAP_HEIGHT)
+    optionsFrame.Size = UDim2.new(1, 0, 0, 0) -- height set after measuring
     optionsFrame.Parent = wrap
-
-    -- base ZIndex on btn so ordering is predictable
-    optionsFrame.ZIndex = (btn.ZIndex or 1)
+    optionsFrame.ClipsDescendants = false
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -1281,9 +1296,6 @@ local function openOptions()
         oc.CornerRadius = UDim.new(0, 6)
         oc.Parent = optBtn
 
-        -- ensure option buttons render above the optionsFrame (and above the button if overlap briefly occurs)
-        optBtn.ZIndex = (optionsFrame.ZIndex or 1) + 1
-
         optBtn.MouseEnter:Connect(function()
             tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
         end)
@@ -1298,10 +1310,9 @@ local function openOptions()
         end)
     end
 
-    -- Wait one frame so AbsolutePosition/AbsoluteSize are valid, then measure & position
+    -- Wait for layout, then size properly and expand wrap to push siblings (with tween)
     spawn(function()
-        task.wait() -- yield one frame
-
+        task.wait(0.03)
         local s = layout.AbsoluteContentSize
         local contentHeight = s.Y + 8
         local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
@@ -1309,20 +1320,13 @@ local function openOptions()
         optionsFrame.Size = UDim2.new(1, 0, 0, height)
         list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
 
-        -- compute exact pixel offset to place options directly under the button
-        local yOffset = 34 -- fallback
-        if wrap and wrap.AbsolutePosition and btn and btn.AbsolutePosition then
-            yOffset = (btn.AbsolutePosition.Y - wrap.AbsolutePosition.Y) + btn.AbsoluteSize.Y
-        end
-        if yOffset < 0 then yOffset = 34 end
-
-        -- set optionsFrame position and expand wrap to push siblings
-        optionsFrame.Position = UDim2.new(0, 0, 0, yOffset)
-        wrap.Size = UDim2.new(1, 0, 0, 34 + height)
+        local targetWrap = UDim2.new(1, 0, 0, ORIGINAL_WRAP_HEIGHT + height)
+        safeTweenSize(wrap, targetWrap, 0.12)
     end)
 
     Window._currentOpenDropdown = closeOptions
 end
+
 
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
