@@ -1197,9 +1197,7 @@ end
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
                 wrap.BackgroundTransparency = 1
-                optionsFrame.Parent = wrap  -- ✅ parent to the dropdown’s wrap, not the section
-                optionsFrame.Position = UDim2.new(0, 0, 1, 4) -- ✅ anchor just below the button
-                optionsFrame.ZIndex = btn.ZIndex + 1          -- optional: ensure it renders above
+                optionsFrame.Parent = Section
 
 
                 local btn = Instance.new("TextButton")
