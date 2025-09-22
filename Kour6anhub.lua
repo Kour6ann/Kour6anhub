@@ -1197,7 +1197,7 @@ end
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
                 wrap.BackgroundTransparency = 1
-                optionsFrame.Parent = Section
+                wrap.Parent = Section
 
 
                 local btn = Instance.new("TextButton")
