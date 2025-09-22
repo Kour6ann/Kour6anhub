@@ -1221,7 +1221,7 @@ local function closeOptions()
     end
     optionsFrame = nil
     open = false
-    -- restore wrap to its original height (34)
+    -- restore wrap to its original height
     wrap.Size = UDim2.new(1, 0, 0, 34)
     if Window._currentOpenDropdown == closeOptions then
         Window._currentOpenDropdown = nil
@@ -1241,10 +1241,12 @@ local function openOptions()
     optionsFrame.BackgroundColor3 = theme.SectionBackground
     optionsFrame.BorderSizePixel = 0
     optionsFrame.AnchorPoint = Vector2.new(0, 0)
-    -- position inside wrap immediately under the button
-    optionsFrame.Position = UDim2.new(0, 0, 0, 34)
     optionsFrame.Size = UDim2.new(1, 0, 0, 0) -- we'll set height after measuring
+    optionsFrame.ClipsDescendants = false
     optionsFrame.Parent = wrap
+
+    -- base ZIndex on btn so ordering is predictable
+    optionsFrame.ZIndex = (btn.ZIndex or 1)
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -1279,6 +1281,9 @@ local function openOptions()
         oc.CornerRadius = UDim.new(0, 6)
         oc.Parent = optBtn
 
+        -- ensure option buttons render above the optionsFrame (and above the button if overlap briefly occurs)
+        optBtn.ZIndex = (optionsFrame.ZIndex or 1) + 1
+
         optBtn.MouseEnter:Connect(function()
             tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
         end)
@@ -1293,9 +1298,10 @@ local function openOptions()
         end)
     end
 
-    -- Wait for layout, then size properly and expand wrap to push siblings
+    -- Wait one frame so AbsolutePosition/AbsoluteSize are valid, then measure & position
     spawn(function()
-        task.wait(0.03)
+        task.wait() -- yield one frame
+
         local s = layout.AbsoluteContentSize
         local contentHeight = s.Y + 8
         local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
@@ -1303,14 +1309,22 @@ local function openOptions()
         optionsFrame.Size = UDim2.new(1, 0, 0, height)
         list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
 
-        -- Expand wrap so parent UI layouts will push other elements
+        -- compute exact pixel offset to place options directly under the button
+        local yOffset = 34 -- fallback
+        if wrap and wrap.AbsolutePosition and btn and btn.AbsolutePosition then
+            yOffset = (btn.AbsolutePosition.Y - wrap.AbsolutePosition.Y) + btn.AbsoluteSize.Y
+        end
+        if yOffset < 0 then yOffset = 34 end
+
+        -- set optionsFrame position and expand wrap to push siblings
+        optionsFrame.Position = UDim2.new(0, 0, 0, yOffset)
         wrap.Size = UDim2.new(1, 0, 0, 34 + height)
     end)
 
     Window._currentOpenDropdown = closeOptions
 end
 
-
+                
                 btn.MouseButton1Click:Connect(function()
                     if open then
                         closeOptions()
