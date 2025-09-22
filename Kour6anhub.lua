@@ -1239,7 +1239,9 @@ end
                     optionsFrame.BorderSizePixel = 0
                     optionsFrame.Size = UDim2.new(1, 0, 0, math.min(200, #options * 28))
                     optionsFrame.AnchorPoint = Vector2.new(0,0)
-                    optionsFrame.Parent = Section
+                    optionsFrame.Position = UDim2.new(0, 0, 1, 0) -- directly below the button
+                    optionsFrame.Parent = btn
+
 
                     local corner = Instance.new("UICorner")
                     corner.CornerRadius = UDim.new(0, 6)
