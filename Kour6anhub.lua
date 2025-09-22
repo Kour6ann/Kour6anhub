@@ -766,7 +766,7 @@ function Kour6anHub.CreateLib(title, themeName)
         local TabFramePadding = Instance.new("UIPadding")
         TabFramePadding.PaddingTop = UDim.new(0, 8)
         TabFramePadding.PaddingLeft = UDim.new(0, 8)
-        TabFramePadding.PaddingRight = UDim2.new and UDim2.new() or UDim2.new -- noop guard (unused)
+        TabFramePadding.PaddingRight = UDim.new(0, 8)
         TabFramePadding.Parent = TabFrame
 
         TabLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
