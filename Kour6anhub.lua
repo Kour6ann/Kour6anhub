@@ -463,7 +463,7 @@ function Kour6anHub.CreateLib(title, themeName)
                 local frame = entry.Frame
                 local active = false
                 if btn and btn.Parent then
-                    active = btn:GetAttribute and btn:GetAttribute("active")
+                    active = (btn.GetAttribute and btn.GetAttribute(btn, "active"))
                     btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
                     btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
                 end
