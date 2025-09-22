@@ -1241,12 +1241,10 @@ local function openOptions()
     optionsFrame.BackgroundColor3 = theme.SectionBackground
     optionsFrame.BorderSizePixel = 0
     optionsFrame.AnchorPoint = Vector2.new(0, 0)
-    optionsFrame.Size = UDim2.new(1, 0, 0, 0) -- we'll set height after measuring
-    optionsFrame.ClipsDescendants = false
-    optionsFrame.Parent = wrap
-
-    -- base ZIndex on btn so ordering is predictable
-    optionsFrame.ZIndex = (btn.ZIndex or 1)
+    optionsFrame.Size = UDim2.new(0, btn.AbsoluteSize.X, 0, 0) -- start collapsed
+    optionsFrame.Position = UDim2.new(0, btn.AbsolutePosition.X, 0, btn.AbsolutePosition.Y + btn.AbsoluteSize.Y + 2)
+    optionsFrame.ZIndex = 50
+    optionsFrame.Parent = Window -- float above all content
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -1258,6 +1256,7 @@ local function openOptions()
     list.CanvasSize = UDim2.new(0, 0, 0, 0)
     list.ScrollBarThickness = 6
     list.BorderSizePixel = 0
+    list.ZIndex = 51
     list.Parent = optionsFrame
 
     local layout = Instance.new("UIListLayout")
@@ -1265,24 +1264,22 @@ local function openOptions()
     layout.Padding = UDim.new(0, 4)
     layout.Parent = list
 
-    for i, opt in ipairs(options) do
+    for _, opt in ipairs(options) do
         local optBtn = Instance.new("TextButton")
         optBtn.Size = UDim2.new(1, -8, 0, 24)
-        optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
+        optBtn.Position = UDim2.new(0, 4, 0, 0)
         optBtn.BackgroundColor3 = theme.Background
         optBtn.Text = tostring(opt)
         optBtn.Font = Enum.Font.Gotham
         optBtn.TextSize = 13
         optBtn.TextColor3 = theme.Text
         optBtn.AutoButtonColor = false
+        optBtn.ZIndex = 52
         optBtn.Parent = list
 
         local oc = Instance.new("UICorner")
         oc.CornerRadius = UDim.new(0, 6)
         oc.Parent = optBtn
-
-        -- ensure option buttons render above the optionsFrame (and above the button if overlap briefly occurs)
-        optBtn.ZIndex = (optionsFrame.ZIndex or 1) + 1
 
         optBtn.MouseEnter:Connect(function()
             tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
@@ -1298,65 +1295,21 @@ local function openOptions()
         end)
     end
 
-    -- Wait one frame so AbsolutePosition/AbsoluteSize are valid, then measure & position
     spawn(function()
-        task.wait() -- yield one frame
-
+        task.wait(0.03)
         local s = layout.AbsoluteContentSize
         local contentHeight = s.Y + 8
-        local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
+        local height = math.min(200, contentHeight)
 
-        optionsFrame.Size = UDim2.new(1, 0, 0, height)
         list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
 
-        -- compute exact pixel offset to place options directly under the button
-        local yOffset = 34 -- fallback
-        if wrap and wrap.AbsolutePosition and btn and btn.AbsolutePosition then
-            yOffset = (btn.AbsolutePosition.Y - wrap.AbsolutePosition.Y) + btn.AbsoluteSize.Y
-        end
-        if yOffset < 0 then yOffset = 34 end
-
-        -- set optionsFrame position and expand wrap to push siblings
-        optionsFrame.Position = UDim2.new(0, 0, 0, yOffset)
-        wrap.Size = UDim2.new(1, 0, 0, 34 + height)
+        -- tween open
+        tween(optionsFrame, {Size = UDim2.new(0, btn.AbsoluteSize.X, 0, height)}, 0.15)
     end)
 
     Window._currentOpenDropdown = closeOptions
 end
 
-                
-                btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closeOptions()
-                    else
-                        openOptions()
-                    end
-                end)
-
-                return {
-                    Button = btn,
-                    Get = function() return current end,
-                    Set = function(v)
-                        current = v
-                        btn.Text = (name and name .. ": " or "") .. tostring(current)
-                        safeCallback(callback, current)
-                    end,
-                    Refresh = function(newOptions)
-                        options = newOptions or {}
-                        if type(options) ~= "table" then options = {} end
-                        current = options[1] or nil
-                        btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
-                        if optionsFrame then
-                            pcall(function() optionsFrame:Destroy() end)
-                            optionsFrame = nil
-                            open = false
-                            if Window._currentOpenDropdown == closeOptions then
-                                Window._currentOpenDropdown = nil
-                            end
-                        end
-                    end
-                }
-            end
 
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
