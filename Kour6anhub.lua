@@ -1199,7 +1199,6 @@ end
                 wrap.BackgroundTransparency = 1
                 wrap.Parent = Section
 
-
                 local btn = Instance.new("TextButton")
                 btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "[Select]")
                 btn.Size = UDim2.new(1, 0, 1, 0)
@@ -1224,6 +1223,7 @@ end
                         Window._currentOpenDropdown = nil
                     end
                 end
+
 
                 local function openOptions()
                     if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
