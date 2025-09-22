@@ -567,53 +567,77 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
-    -- Minimize/Restore methods
-    function Window:Minimize()
-        if self._uiMinimized then return end
+    -- Drop-in safer Minimize / Restore / ToggleMinimize
 
-        -- Store the current size before minimizing
-        self._storedSize = self.Main.Size
-        self._uiMinimized = true
+function Window:Minimize()
+    if self._uiMinimized then return end
 
-        -- Collapse to just the topbar
-        tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, 40)}, 0.18)
+    -- store current size for exact restore
+    self._storedSize = self._storedSize or (self.Main and self.Main.Size)
+    self._uiMinimized = true
 
-        -- Hide the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 1}, 0.18)
-        tween(Content, {BackgroundTransparency = 1}, 0.18)
+    -- determine header height safely (use self.Topbar if available, otherwise global Topbar)
+    local header = (self.Topbar or Topbar)
+    local headerHeight = (header and header.AbsoluteSize and header.AbsoluteSize.Y) or 40
 
-        -- Make tab buttons invisible
+    -- collapse the main window to header height (use your existing tween helper)
+    if self.Main and tween then
+        pcall(function()
+            tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, headerHeight)}, 0.18)
+        end)
+    end
+
+    -- hide the content panels (safer than tweening transparency)
+    if TabContainer then pcall(function() TabContainer.Visible = false end) end
+    if Content    then pcall(function() Content.Visible = false end) end
+
+    -- hide tab buttons
+    if Tabs and type(Tabs) == "table" then
         for _, tab in ipairs(Tabs) do
-            tab.Button.Visible = false
+            pcall(function() if tab and tab.Button then tab.Button.Visible = false end end)
         end
     end
+end
 
-    function Window:Restore()
-        if not self._uiMinimized then return end
+function Window:Restore()
+    if not self._uiMinimized then return end
+    self._uiMinimized = false
 
-        self._uiMinimized = false
+    -- restore main size
+    if self._storedSize and self.Main and tween then
+        pcall(function()
+            tween(self.Main, {Size = self._storedSize}, 0.18)
+        end)
+    end
 
-        -- Restore to original size
-        tween(self.Main, {Size = self._storedSize}, 0.18)
+    -- show the content panels again
+    if TabContainer then pcall(function() TabContainer.Visible = true end) end
+    if Content then
+        pcall(function()
+            -- prefer theme background if available to avoid engine fallback grey
+            local themeBg = (self.theme and self.theme.Background) or (theme and theme.Background)
+            if themeBg then
+                Content.BackgroundColor3 = themeBg
+            end
+            Content.Visible = true
+        end)
+    end
 
-        -- Show the tab container and content
-        tween(TabContainer, {BackgroundTransparency = 0}, 0.18)
-        -- Content should remain transparent (original behaviour suggested it should be visible), set to 0
-        tween(Content, {BackgroundTransparency = 0}, 0.18)
-
-        -- Make tab buttons visible again
+    -- restore tab buttons
+    if Tabs and type(Tabs) == "table" then
         for _, tab in ipairs(Tabs) do
-            tab.Button.Visible = true
+            pcall(function() if tab and tab.Button then tab.Button.Visible = true end end)
         end
     end
+end
 
-    function Window:ToggleMinimize()
-        if self._uiMinimized then
-            self:Restore()
-        else
-            self:Minimize()
-        end
+function Window:ToggleMinimize()
+    if self._uiMinimized then
+        self:Restore()
+    else
+        self:Minimize()
     end
+end
 
     -- Destroy method (now disconnects all known connections and runs cleanup hooks)
     function Window:Destroy()
