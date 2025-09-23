@@ -1,29 +1,7 @@
--- Kour6anHub (patched)
--- Filename: Kour6anhub_patched.lua
--- Encoding: UTF-8
--- Indentation: 4 spaces
--- Executive summary:
---   - Minimal, backward-compatible edits to expose a runtime registry of persistent elements
---     and standardized element wrappers (attached as <returned_object>._element).
---   - Adds a Configurations section in a "Settings" tab that integrates with SaveManager.lua
---     when SaveManager.lua is present in the same environment (readable via readfile).
---   - All changes are localized to sections creating UI controls and the end-of-file Settings tab.
--- Precondition for Config UI: SaveManager.lua present (recommended). If not found,
---   the Config UI still renders but disables actions and shows a helpful message.
---
--- Test coverage: The qa_pack tests rely on this file. See qa_pack/tests/* for runnable tests.
+-- Kour6anHub UI Library
+-- v4 patched for connection cleanup, validation, safe theme switching,
+-- notification race fixes, and other hardening.
 
--- Changelog (brief):
---  - Added Window._elements (array) and Window._elements_by_flag (map).
---  - Modified Toggle, Slider, Dropdown, Keybind, Textbox, Colorpicker factories:
---    + Accept optional flag (opts or string) as 4th param.
---    + Attach standardized wrapper to returned object as returned._element.
---    + Wrapper shape: { Type, Flag, Value, Raw, Set(self, v, suppressCallback), Get(self) }.
---  - Added Settings tab with Configurations section that uses SaveManager if available.
---  - Set/SetState/SetKey methods accept suppressCallback to optionally avoid triggering callbacks.
---  - All added code is guarded and uses safeCallback where appropriate.
-
--- Load original library and apply minimal patches.
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
 
@@ -31,7 +9,6 @@ Kour6anHub.__index = Kour6anHub
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local HttpService = game:GetService("HttpService")
 
 -- Tween helper
 local function tween(obj, props, dur)
@@ -63,7 +40,7 @@ local function makeConnectionTracker()
     }
 end
 
--- Utility: Dragging
+-- Utility: Dragging (original style) but returns connections so they can be cleaned
 local function makeDraggable(frame, dragHandle)
     local connTracker = makeConnectionTracker()
     local dragging, dragStart, startPos
@@ -100,7 +77,7 @@ local function makeDraggable(frame, dragHandle)
     return connTracker
 end
 
--- Safe callback helper
+-- Safe callback helper to prevent errors in user code from breaking the UI
 local function safeCallback(callback, ...)
     if typeof(callback) ~= "function" then return false end
     local success, result = pcall(callback, ...)
@@ -110,7 +87,7 @@ local function safeCallback(callback, ...)
     return success, result
 end
 
--- Themes (same as original)
+-- Themes (same as original plus added ones)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
@@ -128,7 +105,6 @@ local Themes = {
         SubText = Color3.fromRGB(180,180,180),
         Accent = Color3.fromRGB(0,120,255)
     },
-    -- ... (other themes omitted for brevity in header - full set preserved below)
     ["Midnight"] = {
         Background = Color3.fromRGB(10,12,20),
         TabBackground = Color3.fromRGB(18,20,30),
@@ -293,10 +269,6 @@ function Kour6anHub.CreateLib(title, themeName)
     Window.Main = Main
     Window._connTracker = globalConnTracker -- store tracker
 
-    -- runtime registry for persistable elements (added by patch)
-    Window._elements = {}             -- insertion-ordered array of wrappers
-    Window._elements_by_flag = {}     -- map flag -> wrapper
-
     -- pointer to currently open embedded dropdown close function
     Window._currentOpenDropdown = nil
 
@@ -331,16 +303,7 @@ function Kour6anHub.CreateLib(title, themeName)
 
     Window._notificationHolder = createNotificationHolder()
 
-    -- helper to register a wrapper element into the Window registry
-    local function registerElement(wrapper)
-        if not wrapper or type(wrapper) ~= "table" then return end
-        table.insert(Window._elements, wrapper)
-        if wrapper.Flag and type(wrapper.Flag) == "string" and wrapper.Flag ~= "" then
-            Window._elements_by_flag[wrapper.Flag] = wrapper
-        end
-    end
-
-    -- rest of original functions...
+    -- helper to reposition all notifications (stack bottom-up)
     local function repositionNotifications()
         for i, notif in ipairs(Window._notifications) do
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
@@ -353,6 +316,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
+    -- add a notification (safe; fixes race conditions)
     function Window:Notify(titleText, bodyText, duration)
         duration = duration or Window._notifConfig.defaultDuration
         if type(duration) ~= "number" or duration < 0 then duration = Window._notifConfig.defaultDuration end
@@ -460,6 +424,7 @@ function Kour6anHub.CreateLib(title, themeName)
         return notif
     end
 
+    -- get available theme names
     function Window:GetThemeList()
         local out = {}
         for k,_ in pairs(Themes) do
@@ -469,6 +434,7 @@ function Kour6anHub.CreateLib(title, themeName)
         return out
     end
 
+    -- runtime theme switcher (case-insensitive) -- hardened with pcall and existence checks
     function Window:SetTheme(newThemeName)
         if not newThemeName then return end
         local foundTheme = nil
@@ -560,7 +526,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end)
     end
 
-    -- Toggle/Show/Hide/Minimize/Destroy etc. same as original...
+    -- Toggle UI methods
     function Window:Hide()
         if not Window._uiVisible then return end
         Window._storedPosition = Main.Position
@@ -577,6 +543,7 @@ function Kour6anHub.CreateLib(title, themeName)
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
 
+        -- If UI was minimized, restore it before showing
         if Window._uiMinimized then
             Window:Restore()
         end
@@ -600,93 +567,110 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
-    function Window:Minimize()
-        if self._uiMinimized then return end
+    -- Drop-in safer Minimize / Restore / ToggleMinimize
 
-        self._storedSize = self._storedSize or (self.Main and self.Main.Size)
-        self._uiMinimized = true
+function Window:Minimize()
+    if self._uiMinimized then return end
 
-        local header = (self.Topbar or Topbar)
-        local headerHeight = (header and header.AbsoluteSize and header.AbsoluteSize.Y) or 40
+    -- store current size for exact restore
+    self._storedSize = self._storedSize or (self.Main and self.Main.Size)
+    self._uiMinimized = true
 
-        if self.Main and tween then
-            pcall(function()
-                tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, headerHeight)}, 0.18)
-            end)
+    -- determine header height safely (use self.Topbar if available, otherwise global Topbar)
+    local header = (self.Topbar or Topbar)
+    local headerHeight = (header and header.AbsoluteSize and header.AbsoluteSize.Y) or 40
+
+    -- collapse the main window to header height (use your existing tween helper)
+    if self.Main and tween then
+        pcall(function()
+            tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, headerHeight)}, 0.18)
+        end)
+    end
+
+    -- hide the content panels (safer than tweening transparency)
+    if TabContainer then pcall(function() TabContainer.Visible = false end) end
+    if Content    then pcall(function() Content.Visible = false end) end
+
+    -- hide tab buttons
+    if Tabs and type(Tabs) == "table" then
+        for _, tab in ipairs(Tabs) do
+            pcall(function() if tab and tab.Button then tab.Button.Visible = false end end)
         end
+    end
+end
 
-        if TabContainer then pcall(function() TabContainer.Visible = false end) end
-        if Content    then pcall(function() Content.Visible = false end) end
+function Window:Restore()
+    if not self._uiMinimized then return end
+    self._uiMinimized = false
 
-        if Tabs and type(Tabs) == "table" then
-            for _, tab in ipairs(Tabs) do
-                pcall(function() if tab and tab.Button then tab.Button.Visible = false end end)
+    -- restore main size
+    if self._storedSize and self.Main and tween then
+        pcall(function()
+            tween(self.Main, {Size = self._storedSize}, 0.18)
+        end)
+    end
+
+    -- show the content panels again
+    if TabContainer then pcall(function() TabContainer.Visible = true end) end
+    if Content then
+        pcall(function()
+            -- prefer theme background if available to avoid engine fallback grey
+            local themeBg = (self.theme and self.theme.Background) or (theme and theme.Background)
+            if themeBg then
+                Content.BackgroundColor3 = themeBg
             end
-        end
+            Content.Visible = true
+        end)
     end
 
-    function Window:Restore()
-        if not self._uiMinimized then return end
-        self._uiMinimized = false
-
-        if self._storedSize and self.Main and tween then
-            pcall(function()
-                tween(self.Main, {Size = self._storedSize}, 0.18)
-            end)
-        end
-
-        if TabContainer then pcall(function() TabContainer.Visible = true end) end
-        if Content then
-            pcall(function()
-                local themeBg = (self.theme and self.theme.Background) or (theme and theme.Background)
-                if themeBg then
-                    Content.BackgroundColor3 = themeBg
-                end
-                Content.Visible = true
-            end)
-        end
-
-        if Tabs and type(Tabs) == "table" then
-            for _, tab in ipairs(Tabs) do
-                pcall(function() if tab and tab.Button then tab.Button.Visible = true end end)
-            end
+    -- restore tab buttons
+    if Tabs and type(Tabs) == "table" then
+        for _, tab in ipairs(Tabs) do
+            pcall(function() if tab and tab.Button then tab.Button.Visible = true end end)
         end
     end
+end
 
-    function Window:ToggleMinimize()
-        if self._uiMinimized then
-            self:Restore()
-        else
-            self:Minimize()
-        end
+function Window:ToggleMinimize()
+    if self._uiMinimized then
+        self:Restore()
+    else
+        self:Minimize()
     end
+end
 
-    -- Destroy method
+    -- Destroy method (now disconnects all known connections and runs cleanup hooks)
     function Window:Destroy()
+        -- Disconnect the global toggle key listener
         if self._inputConn then
             pcall(function() self._inputConn:Disconnect() end)
             self._inputConn = nil
         end
 
+        -- run currently open dropdown close function if present
         if Window._currentOpenDropdown then
             pcall(Window._currentOpenDropdown)
             Window._currentOpenDropdown = nil
         end
 
+        -- disconnect any tracked connections
         if self._connTracker then
             pcall(function() self._connTracker.disconnectAll() end)
             self._connTracker = nil
         end
 
+        -- destroy the entire ScreenGui and everything in it
         if self.ScreenGui then
             pcall(function() self.ScreenGui:Destroy() end)
             self.ScreenGui = nil
         end
 
+        -- clear tables to help with garbage collection
         self._notifications = {}
         Tabs = {}
     end
 
+    -- default toggle listener (still active even when ScreenGui disabled)
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -697,8 +681,9 @@ function Kour6anHub.CreateLib(title, themeName)
     Window._inputConn = inputConn  -- Store the toggle key connection
     globalConnTracker:add(inputConn)
 
-    -- Topbar buttons (same)
+    -- Create minimize and close buttons in topbar
     local function createTopbarButtons()
+        -- Minimize button (-)
         local minBtn = Instance.new("TextButton")
         minBtn.Size = UDim2.new(0, 32, 0, 28)
         minBtn.Position = UDim2.new(1, -80, 0, 6)
@@ -726,6 +711,7 @@ function Kour6anHub.CreateLib(title, themeName)
             Window:ToggleMinimize()
         end)
 
+        -- Close button (X)
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 32, 0, 28)
         closeBtn.Position = UDim2.new(1, -40, 0, 6)
@@ -755,7 +741,6 @@ function Kour6anHub.CreateLib(title, themeName)
     end
     createTopbarButtons()
 
-    -- NewTab implementation (keeps original behavior)
     function Window:NewTab(tabName)
         local TabButton = Instance.new("TextButton")
         TabButton.Text = tabName
@@ -828,19 +813,20 @@ function Kour6anHub.CreateLib(title, themeName)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
-        if not Window._currentTab then
-            Window._currentTab = TabButton
-            for _, t in ipairs(Tabs) do
-                t.Button:SetAttribute("active", false)
-                t.Button.BackgroundColor3 = theme.SectionBackground
-                t.Button.TextColor3 = theme.Text
-                t.Frame.Visible = false
-            end
-            TabButton:SetAttribute("active", true)
-            TabButton.BackgroundColor3 = theme.Accent
-            TabButton.TextColor3 = Color3.fromRGB(255,255,255)
-            TabFrame.Visible = true
+         -- 🔥 Auto-select the first tab if none is active yet
+    if not Window._currentTab then
+        Window._currentTab = TabButton
+        for _, t in ipairs(Tabs) do
+            t.Button:SetAttribute("active", false)
+            t.Button.BackgroundColor3 = theme.SectionBackground
+            t.Button.TextColor3 = theme.Text
+            t.Frame.Visible = false
         end
+        TabButton:SetAttribute("active", true)
+        TabButton.BackgroundColor3 = theme.Accent
+        TabButton.TextColor3 = Color3.fromRGB(255,255,255)
+        TabFrame.Visible = true
+    end
 
         local TabObj = {}
 
@@ -945,19 +931,9 @@ function Kour6anHub.CreateLib(title, themeName)
                 return Btn
             end
 
-            -- === Edited: NewToggle accepts an optional flag (4th parameter) ===
-            -- NewToggle signature preservation: (text, desc, callback [, optsOrFlag])
-            function SectionObj:NewToggle(text, desc, callback, opts)
+            function SectionObj:NewToggle(text, desc, callback)
                 if type(text) ~= "string" then text = tostring(text or "Toggle") end
                 if callback ~= nil and typeof(callback) ~= "function" then warn("NewToggle: callback is not a function") end
-
-                -- Determine flag (optional)
-                local flag = nil
-                if type(opts) == "string" then
-                    flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then
-                    flag = opts.flag
-                end
 
                 local ToggleBtn = Instance.new("TextButton")
                 ToggleBtn.Text = text .. " [OFF]"
@@ -1002,44 +978,22 @@ function Kour6anHub.CreateLib(title, themeName)
                     safeCallback(callback, state)
                 end)
 
-                -- backward-compatible returned object (same shape)
-                local raw = {
+                return {
                     Button = ToggleBtn,
                     GetState = function() return state end,
-                    -- New SetState supports optional suppressCallback boolean
-                    SetState = function(v, suppressCallback)
+                    SetState = function(v)
                         state = not not v
                         ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
                         ToggleBtn.BackgroundColor3 = state and theme.Accent or theme.SectionBackground
                         ToggleBtn.TextColor3 = state and Color3.fromRGB(255,255,255) or theme.Text
                         ToggleBtn:SetAttribute("_toggle", state)
-                        if not suppressCallback then
-                            safeCallback(callback, state)
-                        end
+                        safeCallback(callback, state)
                     end
                 }
-
-                -- Standardized wrapper for persistence
-                local wrapper = {
-                    Type = "Toggle",
-                    Flag = flag,
-                    Value = raw.GetState(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.SetState(v, suppress)
-                        self.Value = raw.GetState()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                -- attach wrapper to returned object for discoverability (non-breaking)
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
             end
 
-            -- === Edited: NewSlider accepts optional flag as 5th param: (text, min, max, default, callback [, optsOrFlag])
-            function SectionObj:NewSlider(text, min, max, default, callback, opts)
+            function SectionObj:NewSlider(text, min, max, default, callback)
+                -- Validation
                 if type(min) ~= "number" then min = 0 end
                 if type(max) ~= "number" then max = 100 end
                 if min > max then local t = min; min = max; max = t end
@@ -1047,11 +1001,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 if type(default) ~= "number" then default = tonumber(default) or min end
                 if default < min then default = min end
                 if default > max then default = max end
-
-                -- optional flag
-                local flag = nil
-                if type(opts) == "string" then flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then flag = opts.flag end
 
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 48)
@@ -1137,48 +1086,26 @@ function Kour6anHub.CreateLib(title, themeName)
                 end)
                 localConnTracker:add(icConn)
 
+                -- add local connections to global tracker so Destroy will clean them
                 for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
 
-                local raw = {
-                    Set = function(v, suppressCallback)
+                return {
+                    Set = function(v)
                         local rel = 0
                         if max > min then
                             rel = math.clamp((v - min) / (max - min), 0, 1)
                         end
                         fill.Size = UDim2.new(rel, 0, 1, 0)
                         knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                        if not suppressCallback then
-                            safeCallback(callback, min + (max - min) * rel)
-                        end
+                        safeCallback(callback, min + (max - min) * rel)
                     end,
                     Get = function()
                         return min + (max - min) * fill.Size.X.Scale
                     end
                 }
-
-                local wrapper = {
-                    Type = "Slider",
-                    Flag = flag,
-                    Value = raw.Get(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.Set(v, suppress)
-                        self.Value = raw.Get()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
             end
 
-            -- === Edited: NewTextbox signature supports optional flag as 3rd param: (placeholder, defaultText, callback [, optsOrFlag])
-            function SectionObj:NewTextbox(placeholder, defaultText, callback, opts)
-                local flag = nil
-                if type(opts) == "string" then flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then flag = opts.flag end
-
+            function SectionObj:NewTextbox(placeholder, defaultText, callback)
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
                 wrap.BackgroundTransparency = 1
@@ -1205,36 +1132,15 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
 
-                local raw = {
+                return {
                     TextBox = box,
                     Get = function() return box.Text end,
-                    Set = function(v, suppressCallback) box.Text = tostring(v or "") if not suppressCallback then safeCallback(callback, box.Text) end end,
+                    Set = function(v) box.Text = tostring(v) end,
                     Focus = function() box:CaptureFocus() end
                 }
-
-                local wrapper = {
-                    Type = "Textbox",
-                    Flag = flag,
-                    Value = raw.Get(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.Set(v, suppress)
-                        self.Value = raw.Get()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
             end
 
-            -- === Edited: NewKeybind accepts optional flag as 4th param: (desc, defaultKey, callback [, optsOrFlag])
-            function SectionObj:NewKeybind(desc, defaultKey, callback, opts)
-                local flag = nil
-                if type(opts) == "string" then flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then flag = opts.flag end
-
+            function SectionObj:NewKeybind(desc, defaultKey, callback)
                 local wrap = Instance.new("Frame")
                 wrap.Size = UDim2.new(1, 0, 0, 34)
                 wrap.BackgroundTransparency = 1
@@ -1285,217 +1191,161 @@ function Kour6anHub.CreateLib(title, themeName)
                     end
                 end)
 
+                -- ensure keybind connections are tracked for cleanup
                 globalConnTracker:add(listenerConn)
 
-                local raw = {
+                return {
                     Button = btn,
                     GetKey = function() return boundKey end,
-                    SetKey = function(k, suppressCallback)
-                        -- coerce string -> Enum.KeyCode if needed
-                        if type(k) == "string" then
-                            local candidate = Enum.KeyCode[k]
-                            if candidate then k = candidate else
-                                -- try single-letter uppercase
-                                local up = string.upper(k)
-                                if Enum.KeyCode[up] then k = Enum.KeyCode[up] end
-                            end
-                        end
-                        if typeof(k) == "EnumItem" and k.EnumType == Enum.KeyCode then
-                            boundKey = k
-                        else
-                            boundKey = nil
-                        end
-                        updateDisplay()
-                        if not suppressCallback then safeCallback(callback, boundKey) end
-                    end,
+                    SetKey = function(k) boundKey = k; updateDisplay() end,
                     Disconnect = function() if listenerConn then pcall(function() listenerConn:Disconnect() end) end end
                 }
-
-                local wrapper = {
-                    Type = "Keybind",
-                    Flag = flag,
-                    Value = raw.GetKey(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.SetKey(v, suppress)
-                        self.Value = raw.GetKey()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
             end
 
-            -- === Edited: NewDropdown accepts optional flag as 3rd param: (name, options, callback [, optsOrFlag])
-            function SectionObj:NewDropdown(name, options, callback, opts)
-                options = options or {}
-                if type(options) ~= "table" then options = {} end
-                local flag = nil
-                if type(opts) == "string" then flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then flag = opts.flag end
+            function SectionObj:NewDropdown(name, options, callback)
+    options = options or {}
+    if type(options) ~= "table" then options = {} end
+    local current = options[1] or nil
+    local open = false
+    local optionsFrame = nil
 
-                local current = options[1] or nil
-                local open = false
-                local optionsFrame = nil
+    local wrap = Instance.new("Frame")
+    wrap.Size = UDim2.new(1, 0, 0, 34)
+    wrap.BackgroundTransparency = 1
+    wrap.Parent = Section
 
-                local wrap = Instance.new("Frame")
-                wrap.Size = UDim2.new(1, 0, 0, 34)
-                wrap.BackgroundTransparency = 1
-                wrap.Parent = Section
+    local btn = Instance.new("TextButton")
+    btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundColor3 = theme.SectionBackground
+    btn.TextColor3 = theme.Text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.AutoButtonColor = false
+    btn.Parent = wrap
 
-                local btn = Instance.new("TextButton")
-                btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
-                btn.Size = UDim2.new(1, 0, 1, 0)
-                btn.BackgroundColor3 = theme.SectionBackground
-                btn.TextColor3 = theme.Text
-                btn.Font = Enum.Font.Gotham
-                btn.TextSize = 13
-                btn.AutoButtonColor = false
-                btn.Parent = wrap
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
 
-                local btnCorner = Instance.new("UICorner")
-                btnCorner.CornerRadius = UDim.new(0, 6)
-                btnCorner.Parent = btn
+    local MAX_DROPDOWN_HEIGHT = 200
 
-                local MAX_DROPDOWN_HEIGHT = 200
+    -- tween helper
+    local function tween(obj, props, time)
+        game:GetService("TweenService"):Create(obj, TweenInfo.new(time or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+    end
 
-                local function closeOptions()
-                    if optionsFrame and optionsFrame.Parent then
-                        optionsFrame:Destroy()
-                    end
-                    optionsFrame = nil
-                    open = false
-                    wrap.Size = UDim2.new(1, 0, 0, 34)
-                    if Window._currentOpenDropdown == closeOptions then
-                        Window._currentOpenDropdown = nil
-                    end
+    local function closeOptions()
+        if optionsFrame and optionsFrame.Parent then
+            optionsFrame:Destroy()
+        end
+        optionsFrame = nil
+        open = false
+        wrap.Size = UDim2.new(1, 0, 0, 34)
+        if Window._currentOpenDropdown == closeOptions then
+            Window._currentOpenDropdown = nil
+        end
+    end
+
+    local function openOptions()
+        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
+            Window._currentOpenDropdown()
+        end
+
+        closeOptions()
+        open = true
+
+        optionsFrame = Instance.new("Frame")
+        optionsFrame.Name = "_dropdownOptions"
+        optionsFrame.BackgroundColor3 = theme.SectionBackground
+        optionsFrame.BorderSizePixel = 0
+        optionsFrame.Position = UDim2.new(0, 0, 0, 34) -- just under the button
+        optionsFrame.Size = UDim2.new(1, 0, 0, 0)
+        optionsFrame.Parent = wrap
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 6)
+        corner.Parent = optionsFrame
+
+        local list = Instance.new("ScrollingFrame")
+        list.BackgroundTransparency = 1
+        list.Size = UDim2.new(1, 0, 1, 0)
+        list.CanvasSize = UDim2.new(0, 0, 0, 0)
+        list.ScrollBarThickness = 6
+        list.BorderSizePixel = 0
+        list.Parent = optionsFrame
+
+        local layout = Instance.new("UIListLayout")
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.Padding = UDim.new(0, 4)
+        layout.Parent = list
+
+        for i, opt in ipairs(options) do
+            local optBtn = Instance.new("TextButton")
+            optBtn.Size = UDim2.new(1, -8, 0, 24)
+            optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
+            optBtn.BackgroundColor3 = theme.Background
+            optBtn.Text = tostring(opt)
+            optBtn.Font = Enum.Font.Gotham
+            optBtn.TextSize = 13
+            optBtn.TextColor3 = theme.Text
+            optBtn.AutoButtonColor = false
+            optBtn.Parent = list
+
+            local oc = Instance.new("UICorner")
+            oc.CornerRadius = UDim.new(0, 6)
+            oc.Parent = optBtn
+
+            optBtn.MouseEnter:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
+            end)
+            optBtn.MouseLeave:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
+            end)
+            optBtn.MouseButton1Click:Connect(function()
+                current = opt
+                btn.Text = (name and name .. ": " or "") .. tostring(current)
+                if callback then
+                    pcall(callback, current)
                 end
+                closeOptions()
+            end)
+        end
 
-                local function openOptions()
-                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-                        Window._currentOpenDropdown()
-                    end
+        task.delay(0.03, function()
+            local s = layout.AbsoluteContentSize
+            local contentHeight = s.Y + 8
+            local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
 
-                    closeOptions()
-                    open = true
+            tween(optionsFrame, {Size = UDim2.new(1, 0, 0, height)}, 0.15)
+            list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+            wrap.Size = UDim2.new(1, 0, 0, 34 + height)
+        end)
 
-                    optionsFrame = Instance.new("Frame")
-                    optionsFrame.Name = "_dropdownOptions"
-                    optionsFrame.BackgroundColor3 = theme.SectionBackground
-                    optionsFrame.BorderSizePixel = 0
-                    optionsFrame.Position = UDim2.new(0, 0, 0, 34) -- just under the button
-                    optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-                    optionsFrame.Parent = wrap
+        Window._currentOpenDropdown = closeOptions
+    end
 
-                    local corner = Instance.new("UICorner")
-                    corner.CornerRadius = UDim.new(0, 6)
-                    corner.Parent = optionsFrame
+    btn.MouseButton1Click:Connect(function()
+        if open then
+            closeOptions()
+        else
+            openOptions()
+        end
+    end)
 
-                    local list = Instance.new("ScrollingFrame")
-                    list.BackgroundTransparency = 1
-                    list.Size = UDim2.new(1, 0, 1, 0)
-                    list.CanvasSize = UDim2.new(0, 0, 0, 0)
-                    list.ScrollBarThickness = 6
-                    list.BorderSizePixel = 0
-                    list.Parent = optionsFrame
-
-                    local layout = Instance.new("UIListLayout")
-                    layout.SortOrder = Enum.SortOrder.LayoutOrder
-                    layout.Padding = UDim.new(0, 4)
-                    layout.Parent = list
-
-                    for i, opt in ipairs(options) do
-                        local optBtn = Instance.new("TextButton")
-                        optBtn.Size = UDim2.new(1, -8, 0, 24)
-                        optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
-                        optBtn.BackgroundColor3 = theme.Background
-                        optBtn.Text = tostring(opt)
-                        optBtn.Font = Enum.Font.Gotham
-                        optBtn.TextSize = 13
-                        optBtn.TextColor3 = theme.Text
-                        optBtn.AutoButtonColor = false
-                        optBtn.Parent = list
-
-                        local oc = Instance.new("UICorner")
-                        oc.CornerRadius = UDim.new(0, 6)
-                        oc.Parent = optBtn
-
-                        optBtn.MouseEnter:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
-                        end)
-                        optBtn.MouseLeave:Connect(function()
-                            tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-                        end)
-                        optBtn.MouseButton1Click:Connect(function()
-                            current = opt
-                            btn.Text = (name and name .. ": " or "") .. tostring(current)
-                            if callback then
-                                pcall(callback, current)
-                            end
-                            closeOptions()
-                        end)
-                    end
-
-                    task.delay(0.03, function()
-                        local s = layout.AbsoluteContentSize
-                        local contentHeight = s.Y + 8
-                        local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
-
-                        tween(optionsFrame, {Size = UDim2.new(1, 0, 0, height)}, 0.15)
-                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
-                        wrap.Size = UDim2.new(1, 0, 0, 34 + height)
-                    end)
-
-                    Window._currentOpenDropdown = closeOptions
-                end
-
-                btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closeOptions()
-                    else
-                        openOptions()
-                    end
-                end)
-
-                local raw = {
-                    Set = function(value, suppressCallback)
-                        current = value
-                        btn.Text = (name and name .. ": " or "") .. tostring(current)
-                        if not suppressCallback and callback then
-                            pcall(callback, current)
-                        end
-                    end,
-                    Get = function() return current end,
-                    _options = options
-                }
-
-                local wrapper = {
-                    Type = "Dropdown",
-                    Flag = flag,
-                    Value = raw.Get(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.Set(v, suppress)
-                        self.Value = raw.Get()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
-            end
+    return {
+        Set = function(value)
+            current = value
+            btn.Text = (name and name .. ": " or "") .. tostring(current)
+        end
+    }
+end
 
 
-            function SectionObj:NewColorpicker(name, defaultColor, callback, opts)
-                local flag = nil
-                if type(opts) == "string" then flag = opts
-                elseif type(opts) == "table" and type(opts.flag) == "string" then flag = opts.flag end
-
+            function SectionObj:NewColorpicker(name, defaultColor, callback)
                 if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
                 if typeof(defaultColor) ~= "Color3" then
+                    -- try to parse table
                     if type(defaultColor) == "table" then
                         local ok, c = pcall(function() return Color3.new(defaultColor[1] or defaultColor.R, defaultColor[2] or defaultColor.G, defaultColor[3] or defaultColor.B) end)
                         if ok and typeof(c) == "Color3" then defaultColor = c end
@@ -1535,6 +1385,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     if popup and popup.Parent then pcall(function() popup:Destroy() end) end
                     popup = nil
                     open = false
+                    -- disconnect any local tracker connections
                     pcall(function() localConnTracker.disconnectAll() end)
                 end
 
@@ -1613,6 +1464,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     end)
                     localConnTracker:add(ic)
 
+                    -- track sliders on global tracker so Destroy cleans them
                     for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
 
                     return {
@@ -1640,6 +1492,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     corner.CornerRadius = UDim.new(0, 8)
 
                     local ap = wrap.AbsolutePosition
+                    -- bound popup position (screen clamp)
                     local x = math.clamp(ap.X + 160, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X - 270 or 800))
                     local y = math.clamp(ap.Y + 20, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y - 170 or 600))
                     popup.Position = UDim2.new(0, x, 0, y)
@@ -1703,13 +1556,14 @@ function Kour6anHub.CreateLib(title, themeName)
                         end
                     end)
 
+                    -- track this connection as well
                     globalConnTracker:add(conn)
                 end)
 
-                local raw = {
+                return {
                     Button = btn,
                     Get = function() return cur end,
-                    Set = function(c, suppressCallback)
+                    Set = function(c)
                         if type(c) == "table" then
                             local ok = pcall(function()
                                 cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
@@ -1719,28 +1573,12 @@ function Kour6anHub.CreateLib(title, themeName)
                             cur = c
                         end
                         preview.BackgroundColor3 = cur
-                        if not suppressCallback then safeCallback(callback, cur) end
+                        safeCallback(callback, cur)
                     end
                 }
-
-                local wrapper = {
-                    Type = "Colorpicker",
-                    Flag = flag,
-                    Value = raw.Get(),
-                    Raw = raw,
-                    Set = function(self, v, suppress)
-                        raw.Set(v, suppress)
-                        self.Value = raw.Get()
-                    end,
-                    Get = function(self) return self.Value end
-                }
-                raw._element = wrapper
-                registerElement(wrapper)
-
-                return raw
             end
 
-            -- Compatibility aliases
+            -- === Compatibility aliases for Kavo-style API names ===
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
@@ -1751,306 +1589,9 @@ function Kour6anHub.CreateLib(title, themeName)
         return TabObj
     end
 
-    -- apply initial theme
+    -- apply initial theme (ensures proper contrast)
     Window:SetTheme(themeName or "LightTheme")
 
-    -- === Configurations section in Settings tab (integrated) ===
-    -- Non-invasive: this block attempts to load SaveManager.lua via readfile+loadstring.
-    -- If SaveManager.lua is not available, the UI still works but shows an explanatory label.
-    local function tryLoadSaveManager()
-        local sm = nil
-        local ok, err = pcall(function()
-            if type(readfile) == "function" then
-                local code = readfile("SaveManager.lua")
-                if code and type(code) == "string" then
-                    local f = loadstring(code)
-                    if f then
-                        local result = f()
-                        if type(result) == "table" then
-                            sm = result
-                        end
-                    end
-                end
-            end
-        end)
-        if not ok then
-            warn("[Kour6anHub] SaveManager load pcall failed: " .. tostring(err))
-        end
-        return sm
-    end
-
-    local SaveManager = tryLoadSaveManager()
-
-    -- Create Settings tab and Configurations section
-    local settingsTab = Window:NewTab("Settings")
-    local cfgSection = settingsTab:NewSection("Configurations")
-
-    -- UI elements for configurations
-    local configDropdown = cfgSection:NewDropdown("Select Config", {}, nil)
-    local configTextbox = cfgSection:NewTextbox("Enter new config name", "", nil)
-    local statusLabel = cfgSection:NewLabel("No SaveManager found (configs disabled).")
-
-    -- Buttons: Create / Save / Load / Delete
-    local busy = false
-    local function setBusy(v)
-        busy = v and true or false
-    end
-
-    local function refreshDropdown()
-        -- list from SaveManager if available
-        if not SaveManager then
-            configDropdown.Set("--", true) -- placeholder
-            return
-        end
-        local ok, listOrErr = pcall(function() return SaveManager:ListConfigs() end)
-        if not ok then
-            statusLabel.Text = "Error listing configs: " .. tostring(listOrErr)
-            return
-        end
-        local items = listOrErr or {}
-        -- update the dropdown's internal options (we rely on returned raw._options if present)
-        if configDropdown._options then
-            configDropdown._options = items
-        end
-        configDropdown.Set((#items > 0) and items[1] or "--", true)
-    end
-
-    -- create convenience renderable buttons
-    local createBtn = cfgSection:NewButton("Create", "Create config from textbox", function()
-        if busy then return end
-        if not SaveManager then
-            statusLabel.Text = "SaveManager not available."
-            return
-        end
-        local name = tostring(configTextbox.Text or ""):gsub("^%s*(.-)%s*$", "%1")
-        if name == "" then
-            statusLabel.Text = "Invalid name (empty)."
-            return
-        end
-        setBusy(true)
-        statusLabel.Text = "Creating..."
-        local ok, err = SaveManager:CreateConfigFromName(Window, name)
-        if ok then
-            statusLabel.Text = ("Created '%s'"):format(name)
-            refreshDropdown()
-            configDropdown.Set(name, true)
-        else
-            statusLabel.Text = "Create failed: " .. tostring(err)
-        end
-        setBusy(false)
-    end)
-
-    local saveBtn = cfgSection:NewButton("Save", "Save current UI to config", function()
-        if busy then return end
-        if not SaveManager then
-            statusLabel.Text = "SaveManager not available."
-            return
-        end
-        setBusy(true)
-        statusLabel.Text = "Saving..."
-        -- determine target name: prefer dropdown if a real selection, else textbox
-        local target = configDropdown.Get and configDropdown.Get() or nil
-        local tb = tostring(configTextbox.Text or ""):gsub("^%s*(.-)%s*$", "%1")
-        if (not target or target == "--") and tb == "" then
-            statusLabel.Text = "No config selected or name entered."
-            setBusy(false)
-            return
-        end
-        local nameToUse = (tb ~= "") and tb or target
-        -- if it exists, require overwrite confirmation
-        local list = SaveManager:ListConfigs() or {}
-        local exists = false
-        for _, v in ipairs(list) do if v == nameToUse then exists = true break end end
-        local proceed = true
-        if exists then
-            -- simple confirmation modal using Notify + waiting for user input is not available, so we do a simple confirmation
-            -- Use a confirm via ScreenGui overlay
-            local modal = Instance.new("Frame")
-            modal.Size = UDim2.new(0, 320, 0, 120)
-            modal.Position = UDim2.new(0.5, -160, 0.5, -60)
-            modal.BackgroundColor3 = theme.SectionBackground
-            modal.BorderSizePixel = 0
-            modal.Parent = ScreenGui
-            local corner = Instance.new("UICorner", modal); corner.CornerRadius = UDim.new(0,8)
-            local txt = Instance.new("TextLabel", modal)
-            txt.Size = UDim2.new(1, -20, 0, 64)
-            txt.Position = UDim2.new(0, 10, 0, 10)
-            txt.BackgroundTransparency = 1
-            txt.Font = Enum.Font.Gotham
-            txt.TextSize = 14
-            txt.TextColor3 = theme.Text
-            txt.Text = ("Overwrite existing '%s'?"):format(nameToUse)
-            txt.TextWrapped = true
-            local yes = Instance.new("TextButton", modal)
-            yes.Size = UDim2.new(0.5, -12, 0, 30)
-            yes.Position = UDim2.new(0, 10, 1, -40)
-            yes.Text = "Yes"
-            yes.Font = Enum.Font.Gotham
-            yes.TextSize = 14
-            local no = Instance.new("TextButton", modal)
-            no.Size = UDim2.new(0.5, -12, 0, 30)
-            no.Position = UDim2.new(0.5, 2, 1, -40)
-            no.Text = "No"
-            no.Font = Enum.Font.Gotham
-            no.TextSize = 14
-            local confirmed = nil
-            yes.MouseButton1Click:Connect(function() confirmed = true; pcall(function() modal:Destroy() end) end)
-            no.MouseButton1Click:Connect(function() confirmed = false; pcall(function() modal:Destroy() end) end)
-            -- wait loop
-            local waited = 0
-            while confirmed == nil and waited < 15 do
-                task.wait(0.1); waited = waited + 0.1
-            end
-            if confirmed ~= true then
-                statusLabel.Text = "Save cancelled."
-                setBusy(false)
-                return
-            end
-        end
-
-        local ok, err = SaveManager:SaveConfig(Window, nameToUse)
-        if ok then
-            statusLabel.Text = ("Saved '%s'"):format(nameToUse)
-            refreshDropdown()
-            configDropdown.Set(nameToUse, true)
-        else
-            statusLabel.Text = "Save failed: " .. tostring(err)
-        end
-        setBusy(false)
-    end)
-
-    local loadBtn = cfgSection:NewButton("Load", "Load selected config", function()
-        if busy then return end
-        if not SaveManager then statusLabel.Text = "SaveManager not available."; return end
-        local target = configDropdown.Get and configDropdown.Get() or nil
-        local tb = tostring(configTextbox.Text or ""):gsub("^%s*(.-)%s*$", "%1")
-        if (not target or target == "--") and tb == "" then
-            statusLabel.Text = "No config selected or name entered."
-            return
-        end
-        local nameToUse = (tb ~= "") and tb or target
-        -- confirm load if unsaved: for simplicity always ask
-        local modal = Instance.new("Frame")
-        modal.Size = UDim2.new(0, 320, 0, 120)
-        modal.Position = UDim2.new(0.5, -160, 0.5, -60)
-        modal.BackgroundColor3 = theme.SectionBackground
-        modal.BorderSizePixel = 0
-        modal.Parent = ScreenGui
-        local corner = Instance.new("UICorner", modal); corner.CornerRadius = UDim.new(0,8)
-        local txt = Instance.new("TextLabel", modal)
-        txt.Size = UDim2.new(1, -20, 0, 64)
-        txt.Position = UDim2.new(0, 10, 0, 10)
-        txt.BackgroundTransparency = 1
-        txt.Font = Enum.Font.Gotham
-        txt.TextSize = 14
-        txt.TextColor3 = theme.Text
-        txt.Text = ("Load '%s' and overwrite current UI state?"):format(nameToUse)
-        txt.TextWrapped = true
-        local yes = Instance.new("TextButton", modal)
-        yes.Size = UDim2.new(0.5, -12, 0, 30)
-        yes.Position = UDim2.new(0, 10, 1, -40)
-        yes.Text = "Yes"
-        yes.Font = Enum.Font.Gotham
-        yes.TextSize = 14
-        local no = Instance.new("TextButton", modal)
-        no.Size = UDim2.new(0.5, -12, 0, 30)
-        no.Position = UDim2.new(0.5, 2, 1, -40)
-        no.Text = "No"
-        no.Font = Enum.Font.Gotham
-        no.TextSize = 14
-        local confirmed = nil
-        yes.MouseButton1Click:Connect(function() confirmed = true; pcall(function() modal:Destroy() end) end)
-        no.MouseButton1Click:Connect(function() confirmed = false; pcall(function() modal:Destroy() end) end)
-        local waited = 0
-        while confirmed == nil and waited < 15 do task.wait(0.1); waited = waited + 0.1 end
-        if confirmed ~= true then
-            statusLabel.Text = "Load cancelled."
-            return
-        end
-
-        setBusy(true)
-        statusLabel.Text = "Loading..."
-        -- perform load with callback suppression (library elements support suppression)
-        local ok, err = SaveManager:LoadConfig(Window, nameToUse)
-        if ok then
-            statusLabel.Text = ("Loaded '%s'"):format(nameToUse)
-        else
-            statusLabel.Text = "Load failed: " .. tostring(err)
-        end
-        setBusy(false)
-    end)
-
-    local deleteBtn = cfgSection:NewButton("Delete", "Delete selected config", function()
-        if busy then return end
-        if not SaveManager then statusLabel.Text = "SaveManager not available."; return end
-        local target = configDropdown.Get and configDropdown.Get() or nil
-        if not target or target == "--" then
-            statusLabel.Text = "No config selected to delete."
-            return
-        end
-        -- confirmation
-        local modal = Instance.new("Frame")
-        modal.Size = UDim2.new(0, 320, 0, 120)
-        modal.Position = UDim2.new(0.5, -160, 0.5, -60)
-        modal.BackgroundColor3 = theme.SectionBackground
-        modal.BorderSizePixel = 0
-        modal.Parent = ScreenGui
-        local corner = Instance.new("UICorner", modal); corner.CornerRadius = UDim.new(0,8)
-        local txt = Instance.new("TextLabel", modal)
-        txt.Size = UDim2.new(1, -20, 0, 64)
-        txt.Position = UDim2.new(0, 10, 0, 10)
-        txt.BackgroundTransparency = 1
-        txt.Font = Enum.Font.Gotham
-        txt.TextSize = 14
-        txt.TextColor3 = theme.Text
-        txt.Text = ("Delete '%s'? This cannot be undone."):format(target)
-        txt.TextWrapped = true
-        local yes = Instance.new("TextButton", modal)
-        yes.Size = UDim2.new(0.5, -12, 0, 30)
-        yes.Position = UDim2.new(0, 10, 1, -40)
-        yes.Text = "Yes"
-        yes.Font = Enum.Font.Gotham
-        yes.TextSize = 14
-        local no = Instance.new("TextButton", modal)
-        no.Size = UDim2.new(0.5, -12, 0, 30)
-        no.Position = UDim2.new(0.5, 2, 1, -40)
-        no.Text = "No"
-        no.Font = Enum.Font.Gotham
-        no.TextSize = 14
-        local confirmed = nil
-        yes.MouseButton1Click:Connect(function() confirmed = true; pcall(function() modal:Destroy() end) end)
-        no.MouseButton1Click:Connect(function() confirmed = false; pcall(function() modal:Destroy() end) end)
-        local waited = 0
-        while confirmed == nil and waited < 15 do task.wait(0.1); waited = waited + 0.1 end
-        if confirmed ~= true then
-            statusLabel.Text = "Delete cancelled."
-            return
-        end
-
-        setBusy(true)
-        statusLabel.Text = "Deleting..."
-        local ok, err = SaveManager:DeleteConfig(target)
-        if ok then
-            statusLabel.Text = ("Deleted '%s'"):format(target)
-            refreshDropdown()
-            configDropdown.Set("--", true)
-        else
-            statusLabel.Text = "Delete failed: " .. tostring(err)
-        end
-        setBusy(false)
-    end)
-
-    -- If SaveManager present, populate dropdown
-    if SaveManager then
-        statusLabel.Text = "SaveManager available."
-        refreshDropdown()
-    else
-        statusLabel.Text = "SaveManager.lua not found. Config features disabled."
-        -- disable buttons by changing text color to SubText
-        -- note: we don't want to break existing references
-    end
-
-    -- return window object (unchanged)
     return Window
 end
 
