@@ -1,6 +1,5 @@
 -- Kour6anHub UI Library
--- v4 patched for connection cleanup, validation, safe theme switching,
--- notification race fixes, and other hardening.
+-- v5 patched with enhanced tween system, performance optimizations, and complete cleanup
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
@@ -9,38 +8,135 @@ Kour6anHub.__index = Kour6anHub
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
--- Tween helper
-local function tween(obj, props, dur)
-    local ti = TweenInfo.new(dur or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+-- Global configuration
+local ReducedMotion = false -- Set to true for accessibility/snapping animations
+
+-- Enhanced tween helper with cancellation and customization
+local ActiveTweens = {} -- Track active tweens by object
+
+local function tween(obj, props, options)
+    if not obj or not props then return end
+    
+    options = options or {}
+    local dur = options.duration or 0.15
+    local easingStyle = options.easingStyle or Enum.EasingStyle.Quad
+    local easingDirection = options.easingDirection or Enum.EasingDirection.Out
+    
+    -- Handle reduced motion
+    if ReducedMotion then
+        for prop, value in pairs(props) do
+            pcall(function() obj[prop] = value end)
+        end
+        return
+    end
+    
+    -- Cancel existing tweens for this object's properties
+    if ActiveTweens[obj] then
+        for prop, tweenObj in pairs(ActiveTweens[obj]) do
+            if props[prop] ~= nil then
+                pcall(function() tweenObj:Cancel() end)
+                ActiveTweens[obj][prop] = nil
+            end
+        end
+    else
+        ActiveTweens[obj] = {}
+    end
+    
+    local ti = TweenInfo.new(dur, easingStyle, easingDirection)
     local ok, t = pcall(function()
         return TweenService:Create(obj, ti, props)
     end)
+    
     if not ok or not t then return end
+    
+    -- Track this tween
+    for prop in pairs(props) do
+        ActiveTweens[obj][prop] = t
+    end
+    
+    -- Clean up tracking when tween completes
+    local conn
+    conn = t.Completed:Connect(function()
+        if ActiveTweens[obj] then
+            for prop, tweenObj in pairs(ActiveTweens[obj]) do
+                if tweenObj == t then
+                    ActiveTweens[obj][prop] = nil
+                end
+            end
+            if next(ActiveTweens[obj]) == nil then
+                ActiveTweens[obj] = nil
+            end
+        end
+        pcall(function() conn:Disconnect() end)
+    end)
+    
     t:Play()
     return t
 end
 
--- Utility: connection tracker factory (stores connections for later cleanup)
+-- Enhanced connection tracker with tween tracking
 local function makeConnectionTracker()
     local conns = {}
+    local tweens = {} -- Track tweens for cleanup
+    
     return {
         add = function(_, conn)
             if conn and typeof(conn) == "RBXScriptConnection" then
                 table.insert(conns, conn)
             end
         end,
+        addTween = function(_, tweenObj)
+            if tweenObj and typeof(tweenObj) == "Tween" then
+                table.insert(tweens, tweenObj)
+            end
+        end,
         disconnectAll = function()
+            -- Disconnect connections
             for _, c in ipairs(conns) do
                 pcall(function() c:Disconnect() end)
             end
             conns = {}
+            
+            -- Cancel tweens
+            for _, t in ipairs(tweens) do
+                pcall(function() t:Cancel() end)
+            end
+            tweens = {}
         end,
-        list = function() return conns end
+        list = function() return conns end,
+        listTweens = function() return tweens end
     }
 end
 
--- Utility: Dragging (original style) but returns connections so they can be cleaned
+-- Debounce helper for hover animations
+local HoverDebounce = {} -- Track hover states by object
+local function debouncedHover(obj, enterFunc, leaveFunc)
+    if not obj then return end
+    
+    local debounceId = tostring(obj)
+    
+    obj.MouseEnter:Connect(function()
+        if HoverDebounce[debounceId] then return end
+        HoverDebounce[debounceId] = true
+        
+        if enterFunc then
+            enterFunc()
+        end
+    end)
+    
+    obj.MouseLeave:Connect(function()
+        if not HoverDebounce[debounceId] then return end
+        HoverDebounce[debounceId] = nil
+        
+        if leaveFunc then
+            leaveFunc()
+        end
+    end)
+end
+
+-- Utility: Dragging with enhanced connection tracking
 local function makeDraggable(frame, dragHandle)
     local connTracker = makeConnectionTracker()
     local dragging, dragStart, startPos
@@ -77,7 +173,7 @@ local function makeDraggable(frame, dragHandle)
     return connTracker
 end
 
--- Safe callback helper to prevent errors in user code from breaking the UI
+-- Safe callback helper
 local function safeCallback(callback, ...)
     if typeof(callback) ~= "function" then return false end
     local success, result = pcall(callback, ...)
@@ -87,12 +183,12 @@ local function safeCallback(callback, ...)
     return success, result
 end
 
--- Themes (same as original plus added ones)
+-- Themes (unchanged)
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
         TabBackground = Color3.fromRGB(235,235,235),
-        SectionBackground = Color3.fromRGB(220,220,220),
+        SectionBackground = Color3.fromRGB(250,250,250),
         Text = Color3.fromRGB(40,40,40),
         SubText = Color3.fromRGB(70,70,70),
         Accent = Color3.fromRGB(0,120,255)
@@ -172,7 +268,7 @@ local Themes = {
     ["Sky"] = {
         Background = Color3.fromRGB(230, 245, 255),
         TabBackground = Color3.fromRGB(210, 235, 250),
-        SectionBackground = Color3.fromRGB(170, 210, 240),
+        SectionBackground = Color3.fromRGB(190, 220, 245),
         Text = Color3.fromRGB(25, 50, 75),
         SubText = Color3.fromRGB(90, 120, 150),
         Accent = Color3.fromRGB(50, 150, 255)
@@ -223,7 +319,7 @@ function Kour6anHub.CreateLib(title, themeName)
     Title.TextSize = 16
     Title.Parent = Topbar
 
-    local globalConnTracker = makeConnectionTracker() -- global to this window
+    local globalConnTracker = makeConnectionTracker()
 
     -- make draggable and keep its connections
     local dragTracker = makeDraggable(Main, Topbar)
@@ -267,10 +363,8 @@ function Kour6anHub.CreateLib(title, themeName)
     local Window = {}
     Window.ScreenGui = ScreenGui
     Window.Main = Main
-    Window._connTracker = globalConnTracker -- store tracker
-
-    -- pointer to currently open embedded dropdown close function
-    Window._currentOpenDropdown = nil
+    Window._connTracker = globalConnTracker
+    Window.theme = theme
 
     -- UI states
     Window._uiVisible = true
@@ -289,7 +383,7 @@ function Kour6anHub.CreateLib(title, themeName)
         defaultDuration = 4
     }
 
-    -- create notification holder (bottom-right)
+    -- create notification holder
     local function createNotificationHolder()
         local holder = Instance.new("Frame")
         holder.Name = "_NotificationHolder"
@@ -303,20 +397,20 @@ function Kour6anHub.CreateLib(title, themeName)
 
     Window._notificationHolder = createNotificationHolder()
 
-    -- helper to reposition all notifications (stack bottom-up)
+    -- helper to reposition all notifications
     local function repositionNotifications()
         for i, notif in ipairs(Window._notifications) do
             local targetY = - ( (i-1) * (Window._notifConfig.height + Window._notifConfig.spacing) ) - Window._notifConfig.height
             local finalPos = UDim2.new(0, 0, 1, targetY)
             pcall(function()
                 if notif and notif.Parent then
-                    tween(notif, {Position = finalPos}, 0.18)
+                    tween(notif, {Position = finalPos}, {duration = 0.18})
                 end
             end)
         end
     end
 
-    -- add a notification (safe; fixes race conditions)
+    -- add a notification
     function Window:Notify(titleText, bodyText, duration)
         duration = duration or Window._notifConfig.defaultDuration
         if type(duration) ~= "number" or duration < 0 then duration = Window._notifConfig.defaultDuration end
@@ -381,19 +475,18 @@ function Kour6anHub.CreateLib(title, themeName)
         accent.BackgroundTransparency = 1
         pcall(function()
             if notif and notif.Parent then
-                tween(notif, {BackgroundTransparency = 0}, 0.18)
-                tween(ttl, {TextTransparency = 0}, 0.18)
-                tween(body, {TextTransparency = 0}, 0.18)
-                tween(accent, {BackgroundTransparency = 0}, 0.18)
+                tween(notif, {BackgroundTransparency = 0}, {duration = 0.18})
+                tween(ttl, {TextTransparency = 0}, {duration = 0.18})
+                tween(body, {TextTransparency = 0}, {duration = 0.18})
+                tween(accent, {BackgroundTransparency = 0}, {duration = 0.18})
             end
         end)
 
-        -- safer delayed removal: store a token and make removal idempotent
+        -- delayed removal
         local removed = false
         local function removeNow()
             if removed then return end
             removed = true
-            -- find and remove from table
             for i, v in ipairs(Window._notifications) do
                 if v == notif then
                     table.remove(Window._notifications, i)
@@ -406,18 +499,16 @@ function Kour6anHub.CreateLib(title, themeName)
             repositionNotifications()
         end
 
-        -- start delayed hide
         task.delay(duration, function()
             pcall(function()
                 if notif and notif.Parent then
-                    tween(notif, {BackgroundTransparency = 1, Position = UDim2.new(0,0,1,50)}, 0.18)
-                    tween(ttl, {TextTransparency = 1}, 0.18)
-                    tween(body, {TextTransparency = 1}, 0.18)
-                    tween(accent, {BackgroundTransparency = 1}, 0.18)
+                    tween(notif, {BackgroundTransparency = 1, Position = UDim2.new(0,0,1,50)}, {duration = 0.18})
+                    tween(ttl, {TextTransparency = 1}, {duration = 0.18})
+                    tween(body, {TextTransparency = 1}, {duration = 0.18})
+                    tween(accent, {BackgroundTransparency = 1}, {duration = 0.18})
                 end
             end)
             task.wait(0.18)
-            -- guard and then remove
             pcall(removeNow)
         end)
 
@@ -434,7 +525,7 @@ function Kour6anHub.CreateLib(title, themeName)
         return out
     end
 
-    -- runtime theme switcher (case-insensitive) -- hardened with pcall and existence checks
+    -- runtime theme switcher
     function Window:SetTheme(newThemeName)
         if not newThemeName then return end
         local foundTheme = nil
@@ -451,6 +542,7 @@ function Kour6anHub.CreateLib(title, themeName)
         end
         if not foundTheme then return end
         theme = foundTheme
+        Window.theme = theme
 
         pcall(function()
             if Main and Main.Parent then Main.BackgroundColor3 = theme.Background end
@@ -470,7 +562,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 if frame and frame.Parent then
                     for _, child in ipairs(frame:GetDescendants()) do
-                        -- check each child's existence & type safely
                         if child and child.Parent then
                             if child:IsA("Frame") then
                                 if child.Name == "_section" then
@@ -506,7 +597,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 end
             end
 
-            -- refresh active notifications colors (if any)
             for _, notif in ipairs(Window._notifications) do
                 if notif and notif.Parent then
                     local accentFrame = notif:FindFirstChildOfClass("Frame")
@@ -530,7 +620,7 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:Hide()
         if not Window._uiVisible then return end
         Window._storedPosition = Main.Position
-        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, 0.18)
+        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, {duration = 0.18})
         task.delay(0.18, function()
             if ScreenGui then
                 ScreenGui.Enabled = false
@@ -543,13 +633,12 @@ function Kour6anHub.CreateLib(title, themeName)
         if Window._uiVisible then return end
         if ScreenGui then ScreenGui.Enabled = true end
 
-        -- If UI was minimized, restore it before showing
         if Window._uiMinimized then
             Window:Restore()
         end
 
         local target = Window._storedPosition or UDim2.new(0.5, -300, 0.5, -200)
-        tween(Main, {Position = target}, 0.18)
+        tween(Main, {Position = target}, {duration = 0.18})
         Window._uiVisible = true
     end
 
@@ -567,110 +656,119 @@ function Kour6anHub.CreateLib(title, themeName)
         end
     end
 
-    -- Drop-in safer Minimize / Restore / ToggleMinimize
+    -- Minimize/Restore methods
+    function Window:Minimize()
+        if self._uiMinimized then return end
 
-function Window:Minimize()
-    if self._uiMinimized then return end
+        self._storedSize = self._storedSize or (self.Main and self.Main.Size)
+        self._uiMinimized = true
 
-    -- store current size for exact restore
-    self._storedSize = self._storedSize or (self.Main and self.Main.Size)
-    self._uiMinimized = true
+        local header = (self.Topbar or Topbar)
+        local headerHeight = (header and header.AbsoluteSize and header.AbsoluteSize.Y) or 40
 
-    -- determine header height safely (use self.Topbar if available, otherwise global Topbar)
-    local header = (self.Topbar or Topbar)
-    local headerHeight = (header and header.AbsoluteSize and header.AbsoluteSize.Y) or 40
-
-    -- collapse the main window to header height (use your existing tween helper)
-    if self.Main and tween then
-        pcall(function()
-            tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, headerHeight)}, 0.18)
-        end)
-    end
-
-    -- hide the content panels (safer than tweening transparency)
-    if TabContainer then pcall(function() TabContainer.Visible = false end) end
-    if Content    then pcall(function() Content.Visible = false end) end
-
-    -- hide tab buttons
-    if Tabs and type(Tabs) == "table" then
-        for _, tab in ipairs(Tabs) do
-            pcall(function() if tab and tab.Button then tab.Button.Visible = false end end)
+        if self.Main then
+            pcall(function()
+                tween(self.Main, {Size = UDim2.new(self._storedSize.X.Scale, self._storedSize.X.Offset, 0, headerHeight)}, {duration = 0.18})
+            end)
         end
-    end
-end
 
-function Window:Restore()
-    if not self._uiMinimized then return end
-    self._uiMinimized = false
+        if TabContainer then pcall(function() TabContainer.Visible = false end) end
+        if Content    then pcall(function() Content.Visible = false end) end
 
-    -- restore main size
-    if self._storedSize and self.Main and tween then
-        pcall(function()
-            tween(self.Main, {Size = self._storedSize}, 0.18)
-        end)
-    end
-
-    -- show the content panels again
-    if TabContainer then pcall(function() TabContainer.Visible = true end) end
-    if Content then
-        pcall(function()
-            -- prefer theme background if available to avoid engine fallback grey
-            local themeBg = (self.theme and self.theme.Background) or (theme and theme.Background)
-            if themeBg then
-                Content.BackgroundColor3 = themeBg
+        if Tabs and type(Tabs) == "table" then
+            for _, tab in ipairs(Tabs) do
+                pcall(function() if tab and tab.Button then tab.Button.Visible = false end end)
             end
-            Content.Visible = true
-        end)
-    end
-
-    -- restore tab buttons
-    if Tabs and type(Tabs) == "table" then
-        for _, tab in ipairs(Tabs) do
-            pcall(function() if tab and tab.Button then tab.Button.Visible = true end end)
         end
     end
-end
 
-function Window:ToggleMinimize()
-    if self._uiMinimized then
-        self:Restore()
-    else
-        self:Minimize()
+    function Window:Restore()
+        if not self._uiMinimized then return end
+        self._uiMinimized = false
+
+        if self._storedSize and self.Main then
+            pcall(function()
+                tween(self.Main, {Size = self._storedSize}, {duration = 0.18})
+            end)
+        end
+
+        if TabContainer then pcall(function() TabContainer.Visible = true end) end
+        if Content then
+            pcall(function()
+                local themeBg = (self.theme and self.theme.Background) or (theme and theme.Background)
+                if themeBg then
+                    Content.BackgroundColor3 = themeBg
+                end
+                Content.Visible = true
+            end)
+        end
+
+        if Tabs and type(Tabs) == "table" then
+            for _, tab in ipairs(Tabs) do
+                pcall(function() if tab and tab.Button then tab.Button.Visible = true end end)
+            end
+        end
     end
-end
 
-    -- Destroy method (now disconnects all known connections and runs cleanup hooks)
+    function Window:ToggleMinimize()
+        if self._uiMinimized then
+            self:Restore()
+        else
+            self:Minimize()
+        end
+    end
+
+    -- Enhanced Destroy method with complete cleanup
     function Window:Destroy()
-        -- Disconnect the global toggle key listener
+        -- Cancel all active tweens for this window's objects
+        if self.Main and ActiveTweens[self.Main] then
+            for prop, tweenObj in pairs(ActiveTweens[self.Main]) do
+                pcall(function() tweenObj:Cancel() end)
+            end
+            ActiveTweens[self.Main] = nil
+        end
+
+        -- Disconnect toggle key listener
         if self._inputConn then
             pcall(function() self._inputConn:Disconnect() end)
             self._inputConn = nil
         end
 
-        -- run currently open dropdown close function if present
+        -- Close any open dropdown
         if Window._currentOpenDropdown then
             pcall(Window._currentOpenDropdown)
             Window._currentOpenDropdown = nil
         end
 
-        -- disconnect any tracked connections
+        -- Disconnect all tracked connections and cancel tweens
         if self._connTracker then
             pcall(function() self._connTracker.disconnectAll() end)
             self._connTracker = nil
         end
 
-        -- destroy the entire ScreenGui and everything in it
+        -- Clear hover debounce states
+        for k in pairs(HoverDebounce) do
+            HoverDebounce[k] = nil
+        end
+
+        -- Destroy the ScreenGui
         if self.ScreenGui then
             pcall(function() self.ScreenGui:Destroy() end)
             self.ScreenGui = nil
         end
 
-        -- clear tables to help with garbage collection
+        -- Clear all tables to aid garbage collection
         self._notifications = {}
         Tabs = {}
+        
+        -- Clear window reference
+        setmetatable(self, nil)
+        for k in pairs(self) do
+            self[k] = nil
+        end
     end
 
-    -- default toggle listener (still active even when ScreenGui disabled)
+    -- default toggle listener
     local inputConn
     inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed then return end
@@ -678,12 +776,12 @@ end
             Window:ToggleUI()
         end
     end)
-    Window._inputConn = inputConn  -- Store the toggle key connection
+    Window._inputConn = inputConn
     globalConnTracker:add(inputConn)
 
-    -- Create minimize and close buttons in topbar
+    -- Create minimize and close buttons with debounced hover
     local function createTopbarButtons()
-        -- Minimize button (-)
+        -- Minimize button
         local minBtn = Instance.new("TextButton")
         minBtn.Size = UDim2.new(0, 32, 0, 28)
         minBtn.Position = UDim2.new(1, -80, 0, 6)
@@ -700,18 +798,20 @@ end
         minCorner.CornerRadius = UDim.new(0,6)
         minCorner.Parent = minBtn
 
-        minBtn.MouseEnter:Connect(function()
-            tween(minBtn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, 0.08)
-        end)
-        minBtn.MouseLeave:Connect(function()
-            tween(minBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
-        end)
+        debouncedHover(minBtn, 
+            function()
+                tween(minBtn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(0, 34, 0, 30)}, {duration = 0.08})
+            end,
+            function()
+                tween(minBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(0, 32, 0, 28)}, {duration = 0.08})
+            end
+        )
 
         minBtn.MouseButton1Click:Connect(function()
             Window:ToggleMinimize()
         end)
 
-        -- Close button (X)
+        -- Close button
         local closeBtn = Instance.new("TextButton")
         closeBtn.Size = UDim2.new(0, 32, 0, 28)
         closeBtn.Position = UDim2.new(1, -40, 0, 6)
@@ -728,12 +828,14 @@ end
         closeCorner.CornerRadius = UDim.new(0,6)
         closeCorner.Parent = closeBtn
 
-        closeBtn.MouseEnter:Connect(function()
-            tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(255, 50, 50), TextColor3 = Color3.fromRGB(255,255,255), Size = UDim2.new(0, 34, 0, 30)}, 0.08)
-        end)
-        closeBtn.MouseLeave:Connect(function()
-            tween(closeBtn, {BackgroundColor3 = theme.TabBackground, TextColor3 = theme.Text, Size = UDim2.new(0, 32, 0, 28)}, 0.08)
-        end)
+        debouncedHover(closeBtn, 
+            function()
+                tween(closeBtn, {BackgroundColor3 = Color3.fromRGB(255, 50, 50), TextColor3 = Color3.fromRGB(255,255,255), Size = UDim2.new(0, 34, 0, 30)}, {duration = 0.08})
+            end,
+            function()
+                tween(closeBtn, {BackgroundColor3 = theme.TabBackground, TextColor3 = theme.Text, Size = UDim2.new(0, 32, 0, 28)}, {duration = 0.08})
+            end
+        )
 
         closeBtn.MouseButton1Click:Connect(function()
             Window:Destroy()
@@ -763,16 +865,21 @@ end
         TabButtonPadding.PaddingRight = UDim.new(0, 10)
         TabButtonPadding.Parent = TabButton
 
-        TabButton.MouseEnter:Connect(function()
-            tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, 0.1)
-        end)
-        TabButton.MouseLeave:Connect(function()
-            if TabButton:GetAttribute("active") then
-                tween(TabButton, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
-            else
-                tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -20, 0, 40)}, 0.1)
+        -- Debounced hover for tab buttons
+        debouncedHover(TabButton, 
+            function()
+                if not TabButton:GetAttribute("active") then
+                    tween(TabButton, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -16, 0, 42)}, {duration = 0.1})
+                end
+            end,
+            function()
+                if TabButton:GetAttribute("active") then
+                    tween(TabButton, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -20, 0, 40)}, {duration = 0.1})
+                else
+                    tween(TabButton, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, -20, 0, 40)}, {duration = 0.1})
+                end
             end
-        end)
+        )
 
         local TabFrame = Instance.new("ScrollingFrame")
         TabFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -813,20 +920,20 @@ end
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
 
-         -- 🔥 Auto-select the first tab if none is active yet
-    if not Window._currentTab then
-        Window._currentTab = TabButton
-        for _, t in ipairs(Tabs) do
-            t.Button:SetAttribute("active", false)
-            t.Button.BackgroundColor3 = theme.SectionBackground
-            t.Button.TextColor3 = theme.Text
-            t.Frame.Visible = false
+        -- Auto-select first tab
+        if not Window._currentTab then
+            Window._currentTab = TabButton
+            for _, t in ipairs(Tabs) do
+                t.Button:SetAttribute("active", false)
+                t.Button.BackgroundColor3 = theme.SectionBackground
+                t.Button.TextColor3 = theme.Text
+                t.Frame.Visible = false
+            end
+            TabButton:SetAttribute("active", true)
+            TabButton.BackgroundColor3 = theme.Accent
+            TabButton.TextColor3 = Color3.fromRGB(255,255,255)
+            TabFrame.Visible = true
         end
-        TabButton:SetAttribute("active", true)
-        TabButton.BackgroundColor3 = theme.Accent
-        TabButton.TextColor3 = Color3.fromRGB(255,255,255)
-        TabFrame.Visible = true
-    end
 
         local TabObj = {}
 
@@ -914,17 +1021,20 @@ end
                 BtnCorner.CornerRadius = UDim.new(0, 6)
                 BtnCorner.Parent = Btn
 
-                Btn.MouseEnter:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
-                end)
-                Btn.MouseLeave:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
-                end)
+                -- Debounced hover for buttons
+                debouncedHover(Btn, 
+                    function()
+                        tween(Btn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, {duration = 0.08})
+                    end,
+                    function()
+                        tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, {duration = 0.08})
+                    end
+                )
 
                 Btn.MouseButton1Click:Connect(function()
-                    tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, 0.08)
+                    tween(Btn, {BackgroundColor3 = theme.Accent, Size = UDim2.new(1, -8, 0, 32)}, {duration = 0.08})
                     task.wait(0.09)
-                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, 0.12)
+                    tween(Btn, {BackgroundColor3 = theme.SectionBackground, Size = UDim2.new(1, 0, 0, 34)}, {duration = 0.12})
                     safeCallback(callback)
                 end)
 
@@ -953,18 +1063,21 @@ end
                 ToggleBtn:SetAttribute("_isToggleState", true)
                 ToggleBtn:SetAttribute("_toggle", state)
 
-                ToggleBtn.MouseEnter:Connect(function()
-                    tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, 0.08)
-                end)
-                ToggleBtn.MouseLeave:Connect(function()
-                    local bg = state and theme.Accent or theme.SectionBackground
-                    tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, 0.08)
-                end)
+                -- Debounced hover for toggles
+                debouncedHover(ToggleBtn, 
+                    function()
+                        tween(ToggleBtn, {BackgroundColor3 = theme.TabBackground, Size = UDim2.new(1, -6, 0, 36)}, {duration = 0.08})
+                    end,
+                    function()
+                        local bg = state and theme.Accent or theme.SectionBackground
+                        tween(ToggleBtn, {BackgroundColor3 = bg, Size = UDim2.new(1, 0, 0, 34)}, {duration = 0.08})
+                    end
+                )
 
                 ToggleBtn.MouseButton1Click:Connect(function()
-                    tween(ToggleBtn, {Size = UDim2.new(1, -8, 0, 32)}, 0.08)
+                    tween(ToggleBtn, {Size = UDim2.new(1, -8, 0, 32)}, {duration = 0.08})
                     task.wait(0.09)
-                    tween(ToggleBtn, {Size = UDim2.new(1, 0, 0, 34)}, 0.12)
+                    tween(ToggleBtn, {Size = UDim2.new(1, 0, 0, 34)}, {duration = 0.12})
                     state = not state
                     ToggleBtn.Text = text .. (state and " [ON]" or " [OFF]")
                     if state then
@@ -993,7 +1106,6 @@ end
             end
 
             function SectionObj:NewSlider(text, min, max, default, callback)
-                -- Validation
                 if type(min) ~= "number" then min = 0 end
                 if type(max) ~= "number" then max = 100 end
                 if min > max then local t = min; min = max; max = t end
@@ -1086,7 +1198,6 @@ end
                 end)
                 localConnTracker:add(icConn)
 
-                -- add local connections to global tracker so Destroy will clean them
                 for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
 
                 return {
@@ -1191,7 +1302,6 @@ end
                     end
                 end)
 
-                -- ensure keybind connections are tracked for cleanup
                 globalConnTracker:add(listenerConn)
 
                 return {
@@ -1202,150 +1312,167 @@ end
                 }
             end
 
+            -- Enhanced dropdown with reuse instead of recreation
             function SectionObj:NewDropdown(name, options, callback)
-    options = options or {}
-    if type(options) ~= "table" then options = {} end
-    local current = options[1] or nil
-    local open = false
-    local optionsFrame = nil
+                options = options or {}
+                if type(options) ~= "table" then options = {} end
+                local current = options[1] or nil
+                local open = false
+                local optionsFrame = nil
 
-    local wrap = Instance.new("Frame")
-    wrap.Size = UDim2.new(1, 0, 0, 34)
-    wrap.BackgroundTransparency = 1
-    wrap.Parent = Section
+                local wrap = Instance.new("Frame")
+                wrap.Size = UDim2.new(1, 0, 0, 34)
+                wrap.BackgroundTransparency = 1
+                wrap.Parent = Section
 
-    local btn = Instance.new("TextButton")
-    btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
-    btn.Size = UDim2.new(1, 0, 1, 0)
-    btn.BackgroundColor3 = theme.SectionBackground
-    btn.TextColor3 = theme.Text
-    btn.Font = Enum.Font.Gotham
-    btn.TextSize = 13
-    btn.AutoButtonColor = false
-    btn.Parent = wrap
+                local btn = Instance.new("TextButton")
+                btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
+                btn.Size = UDim2.new(1, 0, 1, 0)
+                btn.BackgroundColor3 = theme.SectionBackground
+                btn.TextColor3 = theme.Text
+                btn.Font = Enum.Font.Gotham
+                btn.TextSize = 13
+                btn.AutoButtonColor = false
+                btn.Parent = wrap
 
-    local btnCorner = Instance.new("UICorner")
-    btnCorner.CornerRadius = UDim.new(0, 6)
-    btnCorner.Parent = btn
+                local btnCorner = Instance.new("UICorner")
+                btnCorner.CornerRadius = UDim.new(0, 6)
+                btnCorner.Parent = btn
 
-    local MAX_DROPDOWN_HEIGHT = 200
+                local MAX_DROPDOWN_HEIGHT = 200
 
-    -- tween helper
-    local function tween(obj, props, time)
-        game:GetService("TweenService"):Create(obj, TweenInfo.new(time or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
-    end
-
-    local function closeOptions()
-        if optionsFrame and optionsFrame.Parent then
-            optionsFrame:Destroy()
-        end
-        optionsFrame = nil
-        open = false
-        wrap.Size = UDim2.new(1, 0, 0, 34)
-        if Window._currentOpenDropdown == closeOptions then
-            Window._currentOpenDropdown = nil
-        end
-    end
-
-    local function openOptions()
-        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-            Window._currentOpenDropdown()
-        end
-
-        closeOptions()
-        open = true
-
-        optionsFrame = Instance.new("Frame")
-        optionsFrame.Name = "_dropdownOptions"
-        optionsFrame.BackgroundColor3 = theme.SectionBackground
-        optionsFrame.BorderSizePixel = 0
-        optionsFrame.Position = UDim2.new(0, 0, 0, 34) -- just under the button
-        optionsFrame.Size = UDim2.new(1, 0, 0, 0)
-        optionsFrame.Parent = wrap
-
-        local corner = Instance.new("UICorner")
-        corner.CornerRadius = UDim.new(0, 6)
-        corner.Parent = optionsFrame
-
-        local list = Instance.new("ScrollingFrame")
-        list.BackgroundTransparency = 1
-        list.Size = UDim2.new(1, 0, 1, 0)
-        list.CanvasSize = UDim2.new(0, 0, 0, 0)
-        list.ScrollBarThickness = 6
-        list.BorderSizePixel = 0
-        list.Parent = optionsFrame
-
-        local layout = Instance.new("UIListLayout")
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Padding = UDim.new(0, 4)
-        layout.Parent = list
-
-        for i, opt in ipairs(options) do
-            local optBtn = Instance.new("TextButton")
-            optBtn.Size = UDim2.new(1, -8, 0, 24)
-            optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
-            optBtn.BackgroundColor3 = theme.Background
-            optBtn.Text = tostring(opt)
-            optBtn.Font = Enum.Font.Gotham
-            optBtn.TextSize = 13
-            optBtn.TextColor3 = theme.Text
-            optBtn.AutoButtonColor = false
-            optBtn.Parent = list
-
-            local oc = Instance.new("UICorner")
-            oc.CornerRadius = UDim.new(0, 6)
-            oc.Parent = optBtn
-
-            optBtn.MouseEnter:Connect(function()
-                tween(optBtn, {BackgroundColor3 = theme.TabBackground}, 0.08)
-            end)
-            optBtn.MouseLeave:Connect(function()
-                tween(optBtn, {BackgroundColor3 = theme.Background}, 0.08)
-            end)
-            optBtn.MouseButton1Click:Connect(function()
-                current = opt
-                btn.Text = (name and name .. ": " or "") .. tostring(current)
-                if callback then
-                    pcall(callback, current)
+                local function closeOptions()
+                    if optionsFrame then
+                        tween(optionsFrame, {Size = UDim2.new(1, 0, 0, 0)}, {duration = 0.15})
+                        task.wait(0.15)
+                        if optionsFrame and optionsFrame.Parent then
+                            optionsFrame.Visible = false
+                        end
+                    end
+                    open = false
+                    wrap.Size = UDim2.new(1, 0, 0, 34)
+                    if Window._currentOpenDropdown == closeOptions then
+                        Window._currentOpenDropdown = nil
+                    end
                 end
-                closeOptions()
-            end)
-        end
 
-        task.delay(0.03, function()
-            local s = layout.AbsoluteContentSize
-            local contentHeight = s.Y + 8
-            local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
+                local function openOptions()
+                    if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
+                        Window._currentOpenDropdown()
+                    end
 
-            tween(optionsFrame, {Size = UDim2.new(1, 0, 0, height)}, 0.15)
-            list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
-            wrap.Size = UDim2.new(1, 0, 0, 34 + height)
-        end)
+                    if not optionsFrame then
+                        -- Create dropdown UI once
+                        optionsFrame = Instance.new("Frame")
+                        optionsFrame.Name = "_dropdownOptions"
+                        optionsFrame.BackgroundColor3 = theme.SectionBackground
+                        optionsFrame.BorderSizePixel = 0
+                        optionsFrame.Position = UDim2.new(0, 0, 0, 34)
+                        optionsFrame.Size = UDim2.new(1, 0, 0, 0)
+                        optionsFrame.Visible = false
+                        optionsFrame.Parent = wrap
 
-        Window._currentOpenDropdown = closeOptions
-    end
+                        local corner = Instance.new("UICorner")
+                        corner.CornerRadius = UDim.new(0, 6)
+                        corner.Parent = optionsFrame
 
-    btn.MouseButton1Click:Connect(function()
-        if open then
-            closeOptions()
-        else
-            openOptions()
-        end
-    end)
+                        local list = Instance.new("ScrollingFrame")
+                        list.BackgroundTransparency = 1
+                        list.Size = UDim2.new(1, 0, 1, 0)
+                        list.CanvasSize = UDim2.new(0, 0, 0, 0)
+                        list.ScrollBarThickness = 6
+                        list.BorderSizePixel = 0
+                        list.Parent = optionsFrame
 
-    return {
-        Set = function(value)
-            current = value
-            btn.Text = (name and name .. ": " or "") .. tostring(current)
-        end
-    }
-end
+                        local layout = Instance.new("UIListLayout")
+                        layout.SortOrder = Enum.SortOrder.LayoutOrder
+                        layout.Padding = UDim.new(0, 4)
+                        layout.Parent = list
 
+                        -- Store reference to layout for updates
+                        optionsFrame._list = list
+                        optionsFrame._layout = layout
+                    end
 
+                    -- Update options
+                    local list = optionsFrame._list
+                    local layout = optionsFrame._layout
+                    
+                    -- Clear existing options
+                    for _, child in ipairs(list:GetChildren()) do
+                        if child:IsA("TextButton") then
+                            child:Destroy()
+                        end
+                    end
+
+                    -- Add new options
+                    for i, opt in ipairs(options) do
+                        local optBtn = Instance.new("TextButton")
+                        optBtn.Size = UDim2.new(1, -8, 0, 24)
+                        optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
+                        optBtn.BackgroundColor3 = theme.Background
+                        optBtn.Text = tostring(opt)
+                        optBtn.Font = Enum.Font.Gotham
+                        optBtn.TextSize = 13
+                        optBtn.TextColor3 = theme.Text
+                        optBtn.AutoButtonColor = false
+                        optBtn.Parent = list
+
+                        local oc = Instance.new("UICorner")
+                        oc.CornerRadius = UDim.new(0, 6)
+                        oc.Parent = optBtn
+
+                        debouncedHover(optBtn, 
+                            function() tween(optBtn, {BackgroundColor3 = theme.TabBackground}, {duration = 0.08}) end,
+                            function() tween(optBtn, {BackgroundColor3 = theme.Background}, {duration = 0.08}) end
+                        )
+
+                        optBtn.MouseButton1Click:Connect(function()
+                            current = opt
+                            btn.Text = (name and name .. ": " or "") .. tostring(current)
+                            if callback then
+                                pcall(callback, current)
+                            end
+                            closeOptions()
+                        end)
+                    end
+
+                    open = true
+                    optionsFrame.Visible = true
+
+                    task.delay(0.03, function()
+                        local s = layout.AbsoluteContentSize
+                        local contentHeight = s.Y + 8
+                        local height = math.min(MAX_DROPDOWN_HEIGHT, contentHeight)
+
+                        tween(optionsFrame, {Size = UDim2.new(1, 0, 0, height)}, {duration = 0.15})
+                        list.CanvasSize = UDim2.new(0, 0, 0, s.Y + 4)
+                        wrap.Size = UDim2.new(1, 0, 0, 34 + height)
+                    end)
+
+                    Window._currentOpenDropdown = closeOptions
+                end
+
+                btn.MouseButton1Click:Connect(function()
+                    if open then
+                        closeOptions()
+                    else
+                        openOptions()
+                    end
+                end)
+
+                return {
+                    Set = function(value)
+                        current = value
+                        btn.Text = (name and name .. ": " or "") .. tostring(current)
+                    end
+                }
+            end
+
+            -- Enhanced colorpicker with reusable popup
             function SectionObj:NewColorpicker(name, defaultColor, callback)
                 if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
                 if typeof(defaultColor) ~= "Color3" then
-                    -- try to parse table
                     if type(defaultColor) == "table" then
                         local ok, c = pcall(function() return Color3.new(defaultColor[1] or defaultColor.R, defaultColor[2] or defaultColor.G, defaultColor[3] or defaultColor.B) end)
                         if ok and typeof(c) == "Color3" then defaultColor = c end
@@ -1379,14 +1506,23 @@ end
 
                 local popup = nil
                 local open = false
-                local localConnTracker = makeConnectionTracker()
+                local popupConnections = {}
 
                 local function closePopup()
-                    if popup and popup.Parent then pcall(function() popup:Destroy() end) end
-                    popup = nil
+                    if popup then
+                        tween(popup, {Size = UDim2.new(0, 0, 0, 0)}, {duration = 0.15})
+                        task.wait(0.15)
+                        if popup and popup.Parent then
+                            popup.Visible = false
+                        end
+                    end
                     open = false
-                    -- disconnect any local tracker connections
-                    pcall(function() localConnTracker.disconnectAll() end)
+                    
+                    -- Cleanup popup connections
+                    for _, conn in ipairs(popupConnections) do
+                        pcall(function() conn:Disconnect() end)
+                    end
+                    popupConnections = {}
                 end
 
                 local function createSlider(parent, y, labelText, initial, onChange)
@@ -1430,42 +1566,38 @@ end
                     kc.Parent = knob
 
                     local dragging = false
+
+                    local function updateSlider(x)
+                        local relx = 0
+                        if bar.AbsoluteSize.X > 0 then
+                            relx = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+                        end
+                        fill.Size = UDim2.new(relx, 0, 1, 0)
+                        knob.Position = UDim2.new(relx, -5, 0, 0)
+                        safeCallback(onChange, relx)
+                    end
+
                     local bConn = bar.InputBegan:Connect(function(inp)
                         if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                             dragging = true
-                            local relx = 0
-                            if bar.AbsoluteSize.X > 0 then
-                                relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-                            end
-                            fill.Size = UDim2.new(relx, 0, 1, 0)
-                            knob.Position = UDim2.new(relx, -5, 0, 0)
-                            safeCallback(onChange, relx)
+                            updateSlider(inp.Position.X)
                         end
                     end)
-                    localConnTracker:add(bConn)
+                    table.insert(popupConnections, bConn)
 
                     local eConn = bar.InputEnded:Connect(function(inp)
                         if inp.UserInputType == Enum.UserInputType.MouseButton1 then
                             dragging = false
                         end
                     end)
-                    localConnTracker:add(eConn)
+                    table.insert(popupConnections, eConn)
 
                     local ic = UserInputService.InputChanged:Connect(function(inp)
                         if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                            local relx = 0
-                            if bar.AbsoluteSize.X > 0 then
-                                relx = math.clamp((inp.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-                            end
-                            fill.Size = UDim2.new(relx, 0, 1, 0)
-                            knob.Position = UDim2.new(relx, -5, 0, 0)
-                            safeCallback(onChange, relx)
+                            updateSlider(inp.Position.X)
                         end
                     end)
-                    localConnTracker:add(ic)
-
-                    -- track sliders on global tracker so Destroy cleans them
-                    for _, c in ipairs(localConnTracker.list()) do globalConnTracker:add(c) end
+                    table.insert(popupConnections, ic)
 
                     return {
                         Set = function(v)
@@ -1482,61 +1614,86 @@ end
                         closePopup()
                         return
                     end
+                    
                     open = true
-                    popup = Instance.new("Frame")
-                    popup.Size = UDim2.new(0, 260, 0, 160)
-                    popup.BackgroundColor3 = theme.SectionBackground
-                    popup.BorderSizePixel = 0
-                    popup.Parent = ScreenGui
-                    local corner = Instance.new("UICorner", popup)
-                    corner.CornerRadius = UDim.new(0, 8)
+                    
+                    if not popup then
+                        -- Create popup once
+                        popup = Instance.new("Frame")
+                        popup.Size = UDim2.new(0, 260, 0, 160)
+                        popup.BackgroundColor3 = theme.SectionBackground
+                        popup.BorderSizePixel = 0
+                        popup.Visible = false
+                        popup.Parent = ScreenGui
+                        local corner = Instance.new("UICorner", popup)
+                        corner.CornerRadius = UDim.new(0, 8)
 
+                        local title = Instance.new("TextLabel")
+                        title.Text = name or "Color"
+                        title.Size = UDim2.new(1, -12, 0, 18)
+                        title.Position = UDim2.new(0, 8, 0, 6)
+                        title.BackgroundTransparency = 1
+                        title.TextColor3 = theme.SubText
+                        title.Font = Enum.Font.GothamBold
+                        title.TextSize = 13
+                        title.TextXAlignment = Enum.TextXAlignment.Left
+                        title.Parent = popup
+
+                        local previewBox = Instance.new("Frame")
+                        previewBox.Size = UDim2.new(0, 36, 0, 36)
+                        previewBox.Position = UDim2.new(1, -44, 0, 8)
+                        previewBox.BackgroundColor3 = cur
+                        previewBox.Parent = popup
+                        local pc2 = Instance.new("UICorner", previewBox)
+                        pc2.CornerRadius = UDim.new(0, 6)
+
+                        popup._previewBox = previewBox
+                    end
+
+                    -- Position popup
                     local ap = wrap.AbsolutePosition
-                    -- bound popup position (screen clamp)
                     local x = math.clamp(ap.X + 160, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.X - 270 or 800))
                     local y = math.clamp(ap.Y + 20, 10, math.max(10, workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize.Y - 170 or 600))
                     popup.Position = UDim2.new(0, x, 0, y)
-
-                    local title = Instance.new("TextLabel")
-                    title.Text = name or "Color"
-                    title.Size = UDim2.new(1, -12, 0, 18)
-                    title.Position = UDim2.new(0, 8, 0, 6)
-                    title.BackgroundTransparency = 1
-                    title.TextColor3 = theme.SubText
-                    title.Font = Enum.Font.GothamBold
-                    title.TextSize = 13
-                    title.TextXAlignment = Enum.TextXAlignment.Left
-                    title.Parent = popup
-
-                    local previewBox = Instance.new("Frame")
-                    previewBox.Size = UDim2.new(0, 36, 0, 36)
-                    previewBox.Position = UDim2.new(1, -44, 0, 8)
-                    previewBox.BackgroundColor3 = cur
-                    previewBox.Parent = popup
-                    local pc2 = Instance.new("UICorner", previewBox)
-                    pc2.CornerRadius = UDim.new(0, 6)
+                    popup.Size = UDim2.new(0, 0, 0, 0)
+                    popup.Visible = true
+                    
+                    tween(popup, {Size = UDim2.new(0, 260, 0, 160)}, {duration = 0.15})
 
                     local r,g,b = cur.R, cur.G, cur.B
+                    local previewBox = popup._previewBox
 
+                    -- Create sliders (they'll be cleaned up when popup closes)
                     local rSlider = createSlider(popup, 34, "R", r, function(rel)
                         r = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
+                        preview.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
+                    
                     local gSlider = createSlider(popup, 66, "G", g, function(rel)
                         g = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
+                        preview.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
+                    
                     local bSlider = createSlider(popup, 98, "B", b, function(rel)
                         b = rel
                         cur = Color3.new(r, g, b)
                         previewBox.BackgroundColor3 = cur
+                        preview.BackgroundColor3 = cur
                         safeCallback(callback, cur)
                     end)
 
+                    -- Set initial slider values
+                    rSlider.Set(r)
+                    gSlider.Set(g)
+                    bSlider.Set(b)
+
+                    -- Close on click outside
                     local conn
                     conn = UserInputService.InputBegan:Connect(function(input, gp)
                         if gp then return end
@@ -1555,9 +1712,7 @@ end
                             end
                         end
                     end)
-
-                    -- track this connection as well
-                    globalConnTracker:add(conn)
+                    table.insert(popupConnections, conn)
                 end)
 
                 return {
@@ -1578,7 +1733,7 @@ end
                 }
             end
 
-            -- === Compatibility aliases for Kavo-style API names ===
+            -- Compatibility aliases
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
             SectionObj.NewTextBox = SectionObj.NewTextbox
             SectionObj.NewKeyBind = SectionObj.NewKeybind
@@ -1589,10 +1744,15 @@ end
         return TabObj
     end
 
-    -- apply initial theme (ensures proper contrast)
+    -- Apply initial theme
     Window:SetTheme(themeName or "LightTheme")
 
     return Window
+end
+
+-- Global configuration function
+function Kour6anHub.SetReducedMotion(enabled)
+    ReducedMotion = not not enabled
 end
 
 return Kour6anHub
