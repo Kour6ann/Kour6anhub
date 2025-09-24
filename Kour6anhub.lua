@@ -1,14 +1,16 @@
--- Kour6anHub - patched v6
+-- Kour6anHub - patched v6 (full file)
 -- Patches applied: removed blocking waits, pooled dropdown options, unified connection tracking,
 -- popup connection integration with global tracker, periodic cleanup for ActiveTweens/HoverDebounce,
 -- improved Light/Sky theme contrast, selected-option visual feedback, safer tween cancellation,
--- no more constant destroy/recreate of options, and improved popup positioning/clamping.
+-- no more constant destroy/recreate of options, improved popup positioning/clamping,
+-- fixed connection management and attribute usage, safer ScreenGui parenting.
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
 
 -- Services
 local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
@@ -17,11 +19,11 @@ local RunService = game:GetService("RunService")
 local ReducedMotion = false -- Set to true for accessibility/snapping animations
 
 -- Enhanced tween helper with cancellation and customization
-local ActiveTweens = {} -- Track active tweens by object (weak keys not available in plain tables)
+local ActiveTweens = {} -- Track active tweens by object
+local _tweenTimestamps = setmetatable({}, {__mode = "k"}) -- weak keyed by tween object
 
 -- Bounded cleanup settings
 local ACTIVE_TWEEN_MAX_AGE = 60 -- seconds before an orphan entry will be considered for cleanup
-local _tweenTimestamps = setmetatable({}, {__mode = "k"}) -- store timestamps for active entries
 
 local function safeTweenCreate(obj, props, options)
     if not obj or not props then return nil end
@@ -79,7 +81,6 @@ local function safeTweenCreate(obj, props, options)
     return t
 end
 
--- Expose tween wrapper
 local function tween(obj, props, options)
     return safeTweenCreate(obj, props, options)
 end
@@ -116,8 +117,6 @@ local function makeConnectionTracker()
 end
 
 -- Module-level global connection list (for debouncedHover ancConn tracking).
--- We track these as RBXScriptConnection objects here, and will transfer them
--- into per-window trackers when CreateLib runs (so cleanup is centralized).
 local _GLOBAL_CONN_REGISTRY = {}
 local function trackGlobalConn(conn)
     if conn and typeof(conn) == "RBXScriptConnection" then
@@ -125,39 +124,46 @@ local function trackGlobalConn(conn)
     end
 end
 
--- Debounce helper for hover animations (keys are stringified object refs)
-local HoverDebounce = {}
-
-local function _debounceKeyFor(obj)
-    return tostring(obj)
-end
+-- Debounce hover map: store connections so they can be disconnected later
+local HoverDebounce = setmetatable({}, {__mode = "k"}) -- weak-keyed by object for safety
+-- Each entry value will be a table: {anc = RBXScriptConnection, enter = RBXScriptConnection, leave = RBXScriptConnection}
 
 local function debouncedHover(obj, enterFunc, leaveFunc)
-    if not obj then return end
-    local key = _debounceKeyFor(obj)
+    if not obj or not obj:IsA then return end
+    local existing = HoverDebounce[obj]
+    if existing then
+        -- already hooked; return existing entry (idempotent)
+        return
+    end
 
-    -- Clean up debounce if object removed
-    local ancConn
-    ancConn = obj.AncestryChanged:Connect(function(_, parent)
+    local entry = {}
+    HoverDebounce[obj] = entry
+
+    -- AncestryChanged: cleanup when object removed
+    entry.anc = obj.AncestryChanged:Connect(function(_, parent)
         if not parent then
-            HoverDebounce[key] = nil
-            pcall(function() ancConn:Disconnect() end)
+            -- disconnect enter/leave if present
+            if entry.enter then pcall(function() entry.enter:Disconnect() end) end
+            if entry.leave then pcall(function() entry.leave:Disconnect() end) end
+            if entry.anc then pcall(function() entry.anc:Disconnect() end) end
+            HoverDebounce[obj] = nil
         end
     end)
-    -- track this ancConn to avoid leaks
-    trackGlobalConn(ancConn)
+    trackGlobalConn(entry.anc)
 
-    obj.MouseEnter:Connect(function()
-        if HoverDebounce[key] then return end
-        HoverDebounce[key] = true
+    entry.enter = obj.MouseEnter:Connect(function()
+        if HoverDebounce[obj] and HoverDebounce[obj]._locked then return end
+        HoverDebounce[obj]._locked = true
         if enterFunc then pcall(enterFunc) end
     end)
+    trackGlobalConn(entry.enter)
 
-    obj.MouseLeave:Connect(function()
-        if not HoverDebounce[key] then return end
-        HoverDebounce[key] = nil
+    entry.leave = obj.MouseLeave:Connect(function()
+        if not HoverDebounce[obj] then return end
+        HoverDebounce[obj]._locked = nil
         if leaveFunc then pcall(leaveFunc) end
     end)
+    trackGlobalConn(entry.leave)
 end
 
 -- Utility: Dragging with enhanced connection tracking
@@ -211,9 +217,8 @@ end
 local Themes = {
     ["LightTheme"] = {
         Background = Color3.fromRGB(245,245,245),
-        TabBackground = Color3.fromRGB(200,200,200), -- darker for contrast
-        SectionBackground = Color3.fromRGB(220,220,220), -- distinct from background
-        -- NEW: distinct control colors to avoid 1:1 parity with sections
+        TabBackground = Color3.fromRGB(200,200,200),
+        SectionBackground = Color3.fromRGB(220,220,220),
         ButtonBackground = Color3.fromRGB(190,190,190),
         ButtonHover = Color3.fromRGB(170,170,170),
         InputBackground = Color3.fromRGB(255,255,255),
@@ -243,20 +248,29 @@ local Themes = {
         SubText = Color3.fromRGB(90, 120, 150),
         Accent = Color3.fromRGB(50, 150, 255)
     },
-    -- other themes unchanged for brevity (kept identical to previous v5 file in real patch)
+    -- other themes can be appended here
 }
 
--- (For brevity in this code preview, other themes from v5 should be included in real patch.)
 -- Create window
 function Kour6anHub.CreateLib(title, themeName)
     local theme = Themes[themeName] or Themes["LightTheme"]
 
-    -- ScreenGui (replace if exists)
-    local ScreenGui = CoreGui:FindFirstChild("Kour6anHub")
-    if ScreenGui then ScreenGui:Destroy() end
+    -- ScreenGui (prefer PlayerGui when available)
+    local parentGui
+    local localPlayer = Players.LocalPlayer
+    if localPlayer then
+        parentGui = localPlayer:FindFirstChild("PlayerGui") or CoreGui
+    else
+        parentGui = CoreGui
+    end
+
+    local ScreenGui = parentGui:FindFirstChild("Kour6anHub")
+    if ScreenGui then
+        pcall(function() ScreenGui:Destroy() end)
+    end
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Kour6anHub"
-    ScreenGui.Parent = CoreGui
+    ScreenGui.Parent = parentGui
 
     -- Main frame
     local Main = Instance.new("Frame")
@@ -297,7 +311,6 @@ function Kour6anHub.CreateLib(title, themeName)
     for _, c in ipairs(_GLOBAL_CONN_REGISTRY) do
         globalConnTracker:add(c)
     end
-    -- clear registry so future windows don't re-add same conns
     _GLOBAL_CONN_REGISTRY = {}
 
     -- make draggable and keep its connections
@@ -482,7 +495,6 @@ function Kour6anHub.CreateLib(title, themeName)
                     tween(ttl, {TextTransparency = 1}, {duration = 0.18})
                     tween(body, {TextTransparency = 1}, {duration = 0.18})
                     tween(accent, {BackgroundTransparency = 1}, {duration = 0.18})
-                    -- rely on Completed connects to remove after animation completes
                     if t1 then
                         local c
                         c = t1.Completed:Connect(function()
@@ -533,17 +545,18 @@ function Kour6anHub.CreateLib(title, themeName)
             if TabContainer and TabContainer.Parent then TabContainer.BackgroundColor3 = theme.TabBackground end
 
             for _, entry in ipairs(Tabs) do
-                local btn = entry.Button
-                local frame = entry.Frame
-                local active = false
-                if btn and btn.Parent then
-                    active = (btn.GetAttribute and btn.GetAttribute(btn, "active"))
+                if entry and entry.Button then
+                    local btn = entry.Button
+                    local active = false
+                    if btn.GetAttribute then
+                        active = btn:GetAttribute("active")
+                    end
                     btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
                     btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
                 end
 
-                if frame and frame.Parent then
-                    for _, child in ipairs(frame:GetDescendants()) do
+                if entry and entry.Frame and entry.Frame.Parent then
+                    for _, child in ipairs(entry.Frame:GetDescendants()) do
                         if child and child.Parent then
                             if child:IsA("Frame") then
                                 if child.Name == "_section" then
@@ -560,7 +573,6 @@ function Kour6anHub.CreateLib(title, themeName)
                             elseif child:IsA("TextButton") then
                                 pcall(function()
                                     child.TextColor3 = theme.Text
-                                    -- Use distinct button background for interactive controls
                                     if not child:GetAttribute("_isToggleState") then
                                         child.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
                                     else
@@ -582,7 +594,14 @@ function Kour6anHub.CreateLib(title, themeName)
 
             for _, notif in ipairs(Window._notifications) do
                 if notif and notif.Parent then
-                    local accentFrame = notif:FindFirstChildOfClass("Frame")
+                    -- find accent frame reliably
+                    local accentFrame = nil
+                    for _, c in ipairs(notif:GetChildren()) do
+                        if c:IsA("Frame") and c.Size and c.Size.X and c.Size.X.Offset == 6 then
+                            accentFrame = c
+                            break
+                        end
+                    end
                     if accentFrame then
                         pcall(function() accentFrame.BackgroundColor3 = theme.Accent end)
                     end
@@ -603,12 +622,24 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:Hide()
         if not Window._uiVisible then return end
         Window._storedPosition = Main.Position
-        tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, {duration = 0.18})
-        task.delay(0.18, function()
-            if ScreenGui then
-                ScreenGui.Enabled = false
-            end
-        end)
+
+        local t = tween(Main, {Position = UDim2.new(0.5, -300, 0.5, -800)}, {duration = 0.18})
+        if t then
+            local c
+            c = t.Completed:Connect(function()
+                pcall(function() c:Disconnect() end)
+                if ScreenGui then
+                    ScreenGui.Enabled = false
+                end
+            end)
+        else
+            task.delay(0.18, function()
+                if ScreenGui then
+                    ScreenGui.Enabled = false
+                end
+            end)
+        end
+
         Window._uiVisible = false
     end
 
@@ -705,7 +736,7 @@ function Kour6anHub.CreateLib(title, themeName)
     function Window:Destroy()
         -- Cancel all active tweens for this window's objects
         for obj, props in pairs(ActiveTweens) do
-            if obj and obj:IsDescendantOf(Main) then
+            if obj and typeof(obj) == "Instance" and obj:IsDescendantOf(Main) then
                 for prop, tweenObj in pairs(props) do
                     pcall(function() tweenObj:Cancel() end)
                 end
@@ -719,21 +750,26 @@ function Kour6anHub.CreateLib(title, themeName)
             self._inputConn = nil
         end
 
-        -- Close any open dropdown
-        if Window._currentOpenDropdown then
+        -- Close any open dropdown (call safely)
+        if Window._currentOpenDropdown and type(Window._currentOpenDropdown) == "function" then
             pcall(Window._currentOpenDropdown)
             Window._currentOpenDropdown = nil
         end
 
         -- Disconnect all tracked connections and cancel tweens
         if self._connTracker then
-            pcall(function() self._connTracker.disconnectAll() end)
+            pcall(function() self._connTracker:disconnectAll() end)
             self._connTracker = nil
         end
 
-        -- Clear hover debounce states
-        for k in pairs(HoverDebounce) do
-            HoverDebounce[k] = nil
+        -- Clear hover debounce states and disconnect their connections
+        for obj, entry in pairs(HoverDebounce) do
+            if entry then
+                if entry.enter then pcall(function() entry.enter:Disconnect() end) end
+                if entry.leave then pcall(function() entry.leave:Disconnect() end) end
+                if entry.anc then pcall(function() entry.anc:Disconnect() end) end
+            end
+            HoverDebounce[obj] = nil
         end
 
         -- Destroy the ScreenGui
@@ -747,10 +783,10 @@ function Kour6anHub.CreateLib(title, themeName)
         Tabs = {}
 
         -- Clear window reference
-        setmetatable(self, nil)
         for k in pairs(self) do
             self[k] = nil
         end
+        setmetatable(self, nil)
     end
 
     -- default toggle listener
@@ -892,15 +928,18 @@ function Kour6anHub.CreateLib(title, themeName)
 
         TabButton.MouseButton1Click:Connect(function()
             for _, t in ipairs(Tabs) do
-                t.Button:SetAttribute("active", false)
-                t.Button.BackgroundColor3 = theme.SectionBackground
-                t.Button.TextColor3 = theme.Text
-                t.Frame.Visible = false
+                if t and t.Button then
+                    t.Button:SetAttribute("active", false)
+                    t.Button.BackgroundColor3 = theme.SectionBackground
+                    t.Button.TextColor3 = theme.Text
+                end
+                if t and t.Frame then t.Frame.Visible = false end
             end
             TabButton:SetAttribute("active", true)
             TabButton.BackgroundColor3 = theme.Accent
             TabButton.TextColor3 = Color3.fromRGB(255,255,255)
             TabFrame.Visible = true
+            Window._currentTab = TabButton
         end)
 
         table.insert(Tabs, {Button = TabButton, Frame = TabFrame})
@@ -909,10 +948,12 @@ function Kour6anHub.CreateLib(title, themeName)
         if not Window._currentTab then
             Window._currentTab = TabButton
             for _, t in ipairs(Tabs) do
-                t.Button:SetAttribute("active", false)
-                t.Button.BackgroundColor3 = theme.SectionBackground
-                t.Button.TextColor3 = theme.Text
-                t.Frame.Visible = false
+                if t and t.Button then
+                    t.Button:SetAttribute("active", false)
+                    t.Button.BackgroundColor3 = theme.SectionBackground
+                    t.Button.TextColor3 = theme.Text
+                end
+                if t and t.Frame then t.Frame.Visible = false end
             end
             TabButton:SetAttribute("active", true)
             TabButton.BackgroundColor3 = theme.Accent
@@ -995,7 +1036,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 local Btn = Instance.new("TextButton")
                 Btn.Text = text
                 Btn.Size = UDim2.new(1, 0, 0, 34)
-                -- Use ButtonBackground for buttons to fix contrast
                 Btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
                 Btn.TextColor3 = theme.Text
                 Btn.Font = Enum.Font.Gotham
@@ -1222,7 +1262,6 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local box = Instance.new("TextBox")
                 box.Size = UDim2.new(1, 0, 1, 0)
-                -- Use InputBackground for textboxes to improve contrast
                 box.BackgroundColor3 = theme.InputBackground or theme.SectionBackground
                 box.TextColor3 = theme.Text
                 box.ClearTextOnFocus = false
@@ -1329,7 +1368,6 @@ function Kour6anHub.CreateLib(title, themeName)
                 local btn = Instance.new("TextButton")
                 btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "--")
                 btn.Size = UDim2.new(1, 0, 1, 0)
-                -- dropdown control itself uses ButtonBackground for visibility
                 btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
                 btn.TextColor3 = theme.Text
                 btn.Font = Enum.Font.Gotham
@@ -1355,7 +1393,6 @@ function Kour6anHub.CreateLib(title, themeName)
                                 end
                             end)
                         else
-                            -- fallback
                             optionsFrame.Visible = false
                         end
                     end
@@ -1368,7 +1405,8 @@ function Kour6anHub.CreateLib(title, themeName)
 
                 local function openOptions()
                     if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
-                        Window._currentOpenDropdown()
+                        -- close currently open dropdown safely
+                        pcall(Window._currentOpenDropdown)
                     end
 
                     if not optionsFrame then
@@ -1405,14 +1443,13 @@ function Kour6anHub.CreateLib(title, themeName)
                     local list = optionsFrame._list
                     local layout = optionsFrame._layout
 
-                    -- Reuse/allocate option buttons from pool
+                    -- Reuse/allocate option buttons from pool (let UIListLayout manage positions)
                     for i, opt in ipairs(options) do
                         local optBtn = optionPool[i]
                         if not optBtn then
                             optBtn = Instance.new("TextButton")
                             optBtn.Size = UDim2.new(1, -8, 0, 24)
-                            optBtn.Position = UDim2.new(0, 4, 0, (i - 1) * 28)
-                            -- options themselves use ButtonBackground to be distinct from container
+                            -- let UIListLayout position it
                             optBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
                             optBtn.Font = Enum.Font.Gotham
                             optBtn.TextSize = 13
@@ -1482,7 +1519,7 @@ function Kour6anHub.CreateLib(title, themeName)
                     open = true
                     optionsFrame.Visible = true
 
-                    -- measure and tween to size
+                    -- measure and tween to size (defer a tiny bit for layout)
                     task.delay(0.01, function()
                         local s = layout.AbsoluteContentSize
                         local contentHeight = s.Y + 8
@@ -1795,24 +1832,41 @@ function Kour6anHub.CreateLib(title, themeName)
     Window:SetTheme(themeName or "LightTheme")
 
     -- Periodic maintenance: cleanup orphaned ActiveTweens entries and HoverDebounce
-    local lastMaintenance = tick()
     local MAINTENANCE_INTERVAL = 5 -- seconds
+    local accumDt = 0
     local function maintenance()
         -- prune ActiveTweens entries where object no longer exists or has no tracked tweens
         for obj, props in pairs(ActiveTweens) do
-            if not obj or (type(obj) == "userdata" and not obj.Parent) then
+            if not (typeof(obj) == "Instance") or not obj.Parent then
                 ActiveTweens[obj] = nil
             else
                 if next(props) == nil then ActiveTweens[obj] = nil end
             end
         end
-        -- prune HoverDebounce for garbage keys (conservative)
-        for k,_ in pairs(HoverDebounce) do
-            -- no-op: we keep keys until their AncestryChanged handlers clear them
+        -- prune old tween timestamps
+        for tstampTween, ts in pairs(_tweenTimestamps) do
+            if typeof(tstampTween) == "Tween" then
+                if not ts or (tick() - ts) > ACTIVE_TWEEN_MAX_AGE then
+                    pcall(function() tstampTween:Cancel() end)
+                    _tweenTimestamps[tstampTween] = nil
+                end
+            else
+                _tweenTimestamps[tstampTween] = nil
+            end
+        end
+        -- HoverDebounce entries will be removed by their AncestryChanged handlers; but ensure no lingering nil keys
+        for obj, entry in pairs(HoverDebounce) do
+            if not obj or not (typeof(obj) == "Instance") or not obj.Parent then
+                if entry then
+                    if entry.enter then pcall(function() entry.enter:Disconnect() end) end
+                    if entry.leave then pcall(function() entry.leave:Disconnect() end) end
+                    if entry.anc then pcall(function() entry.anc:Disconnect() end) end
+                end
+                HoverDebounce[obj] = nil
+            end
         end
     end
 
-    local accumDt = 0
     local maintConn = RunService.Heartbeat:Connect(function(dt)
         accumDt = accumDt + dt
         if accumDt >= MAINTENANCE_INTERVAL then
