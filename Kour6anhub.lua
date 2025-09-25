@@ -1496,15 +1496,31 @@ end
                 }
             end
 
- -- FIXED DROPDOWN FUNCTION
+ -- DROPDOWN FIX for Kour6anHub Library
+-- Replace the NewDropdown function in the library with this fixed version
+
 function SectionObj:NewDropdown(name, options, callback)
+    -- Ensure options is a proper array of strings
     options = options or {}
-    if type(options) ~= "table" then options = {} end
+    if type(options) ~= "table" then 
+        options = {} 
+    end
+    
+    -- Convert all options to strings and validate
+    local validOptions = {}
+    for i, opt in ipairs(options) do
+        if opt ~= nil then
+            validOptions[i] = tostring(opt)
+        end
+    end
+    options = validOptions
+    
+    -- Set current to first valid option or nil
     local current = options[1] or nil
     local open = false
     local optionsFrame = nil
     local optionButtons = {}
-    local selectedIndex = 1
+    local selectedIndex = current and 1 or nil
 
     local wrap = Instance.new("Frame")
     wrap.Size = UDim2.new(1, 0, 0, 34)
@@ -1512,7 +1528,9 @@ function SectionObj:NewDropdown(name, options, callback)
     wrap.Parent = Section
 
     local btn = Instance.new("TextButton")
-    btn.Text = (name and name .. ": " or "") .. (current and tostring(current) or "Select...")
+    -- FIX: Proper text display logic
+    local displayText = current or "Select..."
+    btn.Text = (name and name .. ": " or "") .. displayText
     btn.Size = UDim2.new(1, 0, 1, 0)
     btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
     btn.TextColor3 = theme.Text
@@ -1544,14 +1562,14 @@ function SectionObj:NewDropdown(name, options, callback)
     arrow.Parent = btn
 
     local function getMaxDropdownHeight()
-    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
-    return math.min(150, math.floor(viewport.Y * 0.25))
-end
-local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+        return math.min(150, math.floor(viewport.Y * 0.25))
+    end
+    local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
 
     local function closeOptions()
         if optionsFrame and optionsFrame.Parent and optionsFrame.Visible then
-            arrow.Text = getArrowChar("up")
+            arrow.Text = getArrowChar("down") -- FIX: Corrected arrow direction
             
             -- Animate close
             local closeTween = tween(optionsFrame, {
@@ -1629,7 +1647,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
 
         createOptionsFrame()
         open = true
-        arrow.Text = "▲"
+        arrow.Text = getArrowChar("up")
 
         -- Clear existing option buttons
         optionButtons = {}
@@ -1650,6 +1668,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
             optBtn.TextSize = 12
             optBtn.TextColor3 = theme.Text
             optBtn.AutoButtonColor = false
+            -- FIX: Ensure we use the string value, not table reference
             optBtn.Text = tostring(opt)
             optBtn.TextXAlignment = Enum.TextXAlignment.Left
             optBtn.BackgroundTransparency = 1
@@ -1666,7 +1685,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
             optPadding.PaddingRight = UDim.new(0, 8)
             optPadding.Parent = optBtn
 
-            -- Set initial selection state
+            -- FIX: Proper selection state checking
             if current and tostring(opt) == tostring(current) then
                 selectedIndex = i
                 optBtn.BackgroundColor3 = theme.Accent
@@ -1689,7 +1708,9 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
             -- Click handler
             local clickConn = optBtn.MouseButton1Click:Connect(function()
                 selectedIndex = i
+                -- FIX: Store the actual string value, not index
                 current = options[i]
+                -- FIX: Update button text with proper string
                 btn.Text = (name and name .. ": " or "") .. tostring(current)
                 
                 -- Update all button states
@@ -1705,7 +1726,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
                     end
                 end
                 
-                -- Call callback
+                -- FIX: Pass the actual string value to callback
                 if callback and type(callback) == "function" then
                     safeCallback(callback, current)
                 end
@@ -1753,56 +1774,73 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
     end)
 
     -- Close dropdown when clicking outside
-local outsideClickConn
-outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed or not open then return end
-    
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        local mouse = UserInputService:GetMouseLocation()
-        local wrapPos = wrap.AbsolutePosition
-        local wrapSize = wrap.AbsoluteSize
+    local outsideClickConn
+    outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed or not open then return end
         
-        if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
-           mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
-            closeOptions()
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mouse = UserInputService:GetMouseLocation()
+            local wrapPos = wrap.AbsolutePosition
+            local wrapSize = wrap.AbsoluteSize
+            
+            if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
+               mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
+                closeOptions()
+            end
         end
-    end
-end)
+    end)
 
--- Track connection for proper cleanup
-globalConnTracker:add(outsideClickConn)
+    -- Track connection for proper cleanup
+    globalConnTracker:add(outsideClickConn)
 
--- Cleanup connection when wrap is destroyed
-local ancestryConn
-ancestryConn = wrap.AncestryChanged:Connect(function()
-    if not wrap.Parent then
-        pcall(function() 
-            outsideClickConn:Disconnect()
-            ancestryConn:Disconnect()
-        end)
-    end
-end)
-globalConnTracker:add(ancestryConn)
+    -- Cleanup connection when wrap is destroyed
+    local ancestryConn
+    ancestryConn = wrap.AncestryChanged:Connect(function()
+        if not wrap.Parent then
+            pcall(function() 
+                outsideClickConn:Disconnect()
+                ancestryConn:Disconnect()
+            end)
+        end
+    end)
+    globalConnTracker:add(ancestryConn)
 
     return {
         Set = function(value)
+            -- FIX: Proper value setting and validation
+            local stringValue = tostring(value)
             for i, opt in ipairs(options) do
-                if tostring(opt) == tostring(value) then
+                if tostring(opt) == stringValue then
                     current = opt
                     selectedIndex = i
-                    btn.Text = (name and name .. ": " or "") .. tostring(current)
+                    btn.Text = (name and name .. ": " or "") .. stringValue
                     return true
                 end
             end
-            current = value
-            btn.Text = (name and name .. ": " or "") .. tostring(current)
+            -- If not found in options, still set it
+            current = stringValue
+            btn.Text = (name and name .. ": " or "") .. stringValue
             return false
         end,
         Get = function()
             return current
         end,
         SetOptions = function(newOptions)
-            options = newOptions or {}
+            -- FIX: Proper options validation and conversion
+            newOptions = newOptions or {}
+            if type(newOptions) ~= "table" then
+                newOptions = {}
+            end
+            
+            -- Convert to strings
+            local validNewOptions = {}
+            for i, opt in ipairs(newOptions) do
+                if opt ~= nil then
+                    validNewOptions[i] = tostring(opt)
+                end
+            end
+            options = validNewOptions
+            
             if #options > 0 then
                 current = options[1]
                 selectedIndex = 1
