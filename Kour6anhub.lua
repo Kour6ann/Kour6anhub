@@ -287,7 +287,6 @@ function Kour6anHub.CreateLib(title, themeName)
     local GuiParent = resolveGuiParent()
 
     -- Create or replace ScreenGui
-    -- Create or replace ScreenGui
 local ScreenGui = GuiParent:FindFirstChild("Kour6anHub")
 if ScreenGui then
     pcall(function() ScreenGui:Destroy() end)
@@ -1444,7 +1443,7 @@ function SectionObj:NewDropdown(name, options, callback)
 
     -- Add dropdown arrow indicator
     local arrow = Instance.new("TextLabel")
-    arrow.Text = "▼"
+    arrow.Text = getArrowChar("down")
     arrow.Size = UDim2.new(0, 20, 1, 0)
     arrow.Position = UDim2.new(1, -20, 0, 0)
     arrow.BackgroundTransparency = 1
@@ -1536,7 +1535,7 @@ function SectionObj:NewDropdown(name, options, callback)
 
         createOptionsFrame()
         open = true
-        arrow.Text = "▲"
+        arrow.Text = getArrowChar("up")
 
         -- Clear existing option buttons
         optionButtons = {}
