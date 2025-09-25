@@ -361,17 +361,11 @@ local function resolveGuiParent()
 end
 
 -- safeCallback wrapper
-local function safeCallback(fn, context, ...)
+local function safeCallback(fn, ...)
     if type(fn) ~= "function" then return end
-    local args = {...}
-    if type(context) ~= "string" then
-        -- Handle backward compatibility
-        table.insert(args, 1, context)
-        context = "unknown"
-    end
-    local ok, err = pcall(fn, unpack(args))
+    local ok, err = pcall(fn, ...)
     if not ok then
-        warn("[Kour6anHub] " .. context .. " callback error:", err)
+        warn("[Kour6anHub] callback error:", err)
     end
 end
 
