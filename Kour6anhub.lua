@@ -2000,7 +2000,7 @@ end
     -- Periodic maintenance: prune orphaned ActiveTweens entries and stale timestamps
     local MAINTENANCE_INTERVAL = 5
     local accumDt = 0
-    local maintConn = RunService.Heartbeat:Connect(function(dt)
+    local maintConn = RunService.Heartbeat:Connect(function(time, dt)
         accumDt = accumDt + dt
         if accumDt >= MAINTENANCE_INTERVAL then
             accumDt = 0
