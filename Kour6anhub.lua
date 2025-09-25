@@ -414,7 +414,7 @@ TopbarCorner.Parent = Topbar
 -- Title (adjusted to make room for buttons)
 local Title = Instance.new("TextLabel")
 Title.Text = title or "Kour6anHub"
-Title.Size = UDim2.new(1, -90, 1, 0)
+Title.Size = UDim2.new(1, -90, 1, 0) -- Changed from UDim2.new(1, -10, 1, 0)
 Title.Position = UDim2.new(0, 10, 0, 0)
 Title.BackgroundTransparency = 1
 Title.TextColor3 = theme.Text
@@ -454,90 +454,6 @@ CloseBtn.Parent = Topbar
 local CloseBtnCorner = Instance.new("UICorner")
 CloseBtnCorner.CornerRadius = UDim.new(0, 6)
 CloseBtnCorner.Parent = CloseBtn
-
--- 2. Then, AFTER the Window object is created and all methods are defined, add this section:
-
--- Setup button functionality (add this AFTER the Window object is fully created)
--- This should go right before the "return Window" line in your CreateLib function
-
--- Minimize Button Click Handler
-local minimizeConn = MinimizeBtn.MouseButton1Click:Connect(function()
-    print("Minimize button clicked") -- Debug print
-    if Window and Window.ToggleMinimize then
-        Window:ToggleMinimize()
-    else
-        warn("Window:ToggleMinimize not available")
-    end
-end)
-globalConnTracker:add(minimizeConn)
-
--- Close Button Click Handler  
-local closeConn = CloseBtn.MouseButton1Click:Connect(function()
-    print("Close button clicked") -- Debug print
-    -- Animate button press
-    local pressTween = tween(CloseBtn, {
-        Size = UDim2.new(0, 28, 0, 28),
-        BackgroundColor3 = Color3.fromRGB(200, 35, 51)
-    }, {duration = 0.08})
-    
-    if pressTween then
-        local conn
-        conn = pressTween.Completed:Connect(function()
-            pcall(function() conn:Disconnect() end)
-            if Window and Window.Destroy then
-                Window:Destroy()
-            else
-                warn("Window:Destroy not available")
-            end
-        end)
-    else
-        task.delay(0.08, function()
-            if Window and Window.Destroy then
-                Window:Destroy()
-            else
-                warn("Window:Destroy not available")
-            end
-        end)
-    end
-end)
-globalConnTracker:add(closeConn)
-
--- Hover Effects (these can stay where they are since they don't depend on Window methods)
-debouncedHover(MinimizeBtn,
-    function()
-        tween(MinimizeBtn, {
-            BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
-            Size = UDim2.new(0, 32, 0, 32)
-        }, {duration = 0.1})
-    end,
-    function()
-        tween(MinimizeBtn, {
-            BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
-            Size = UDim2.new(0, 30, 0, 30)
-        }, {duration = 0.1})
-    end
-)
-
-debouncedHover(CloseBtn,
-    function()
-        tween(CloseBtn, {
-            BackgroundColor3 = Color3.fromRGB(240, 73, 89),
-            Size = UDim2.new(0, 32, 0, 32)
-        }, {duration = 0.1})
-    end,
-    function()
-        tween(CloseBtn, {
-            BackgroundColor3 = Color3.fromRGB(220, 53, 69),
-            Size = UDim2.new(0, 30, 0, 30)
-        }, {duration = 0.1})
-    end
-)
-
--- Store references in Window object for theme updates
-Window._minimizeBtn = MinimizeBtn
-Window._closeBtn = CloseBtn
-Window._topbar = Topbar
-Window._title = Title
 
     local globalConnTracker = makeConnectionTracker()
 
@@ -899,6 +815,25 @@ Window._title = Title
         task.wait()
         Window.ScreenGui.Enabled = true
     end
+        -- Update window control buttons
+if Window._minimizeBtn and Window._minimizeBtn.Parent then
+    Window._minimizeBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+    Window._minimizeBtn.TextColor3 = theme.Text
+end
+
+if Window._closeBtn and Window._closeBtn.Parent then
+    -- Close button keeps its red color
+    Window._closeBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+    Window._closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+
+if Window._topbar and Window._topbar.Parent then
+    Window._topbar.BackgroundColor3 = theme.SectionBackground
+end
+
+if Window._title and Window._title.Parent then
+    Window._title.TextColor3 = theme.Text
+end
     
     print("Theme successfully changed to:", newThemeName)
 end
@@ -2380,7 +2315,76 @@ end
     end)
 
     Window._maintConn = maintConn
+    -- Setup window control buttons functionality
+Window._minimizeBtn = MinimizeBtn
+Window._closeBtn = CloseBtn
+Window._topbar = Topbar
+Window._title = Title
 
+print("[Kour6anHub] Setting up window controls...")
+
+-- Minimize Button Click Handler
+local minimizeConn = MinimizeBtn.MouseButton1Click:Connect(function()
+    print("[Kour6anHub] Minimize button clicked")
+    pcall(function()
+        Window:ToggleMinimize()
+    end)
+end)
+globalConnTracker:add(minimizeConn)
+
+-- Close Button Click Handler  
+local closeConn = CloseBtn.MouseButton1Click:Connect(function()
+    print("[Kour6anHub] Close button clicked")
+    -- Animate button press
+    local pressTween = tween(CloseBtn, {
+        Size = UDim2.new(0, 28, 0, 28),
+        BackgroundColor3 = Color3.fromRGB(200, 35, 51)
+    }, {duration = 0.08})
+    
+    if pressTween then
+        local conn
+        conn = pressTween.Completed:Connect(function()
+            pcall(function() conn:Disconnect() end)
+            Window:Destroy()
+        end)
+    else
+        task.delay(0.08, function()
+            Window:Destroy()
+        end)
+    end
+end)
+globalConnTracker:add(closeConn)
+
+-- Hover Effects
+debouncedHover(MinimizeBtn,
+    function()
+        tween(MinimizeBtn, {
+            BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(MinimizeBtn, {
+            BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
+            Size = UDim2.new(0, 30, 0, 30)
+        }, {duration = 0.1})
+    end
+)
+
+debouncedHover(CloseBtn,
+    function()
+        tween(CloseBtn, {
+            BackgroundColor3 = Color3.fromRGB(240, 73, 89),
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(CloseBtn, {
+            BackgroundColor3 = Color3.fromRGB(220, 53, 69),
+            Size = UDim2.new(0, 30, 0, 30)
+        }, {duration = 0.1})
+    end
+)
     return Window
 end
 
