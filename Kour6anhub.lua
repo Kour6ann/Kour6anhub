@@ -271,11 +271,17 @@ local function resolveGuiParent()
 end
 
 -- safeCallback wrapper
-local function safeCallback(fn, ...)
+local function safeCallback(fn, context, ...)
     if type(fn) ~= "function" then return end
-    local ok, err = pcall(fn, ...)
+    local args = {...}
+    if type(context) ~= "string" then
+        -- Handle backward compatibility
+        table.insert(args, 1, context)
+        context = "unknown"
+    end
+    local ok, err = pcall(fn, unpack(args))
     if not ok then
-        warn("[Kour6anHub] callback error:", err)
+        warn("[Kour6anHub] " .. context .. " callback error:", err)
     end
 end
 
@@ -293,8 +299,7 @@ if ScreenGui then
 end
 ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "Kour6anHub"
-ScreenGui.DisplayOrder = 999999999 -- Very high display order to stay on top
-ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = (9999999999) -- topmost
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = GuiParent
     
@@ -1453,7 +1458,11 @@ function SectionObj:NewDropdown(name, options, callback)
     arrow.TextXAlignment = Enum.TextXAlignment.Center
     arrow.Parent = btn
 
-    local MAX_DROPDOWN_HEIGHT = 150
+    local function getMaxDropdownHeight()
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+    return math.min(150, math.floor(viewport.Y * 0.25))
+end
+local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
 
     local function closeOptions()
         if optionsFrame and optionsFrame.Parent and optionsFrame.Visible then
