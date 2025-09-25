@@ -57,6 +57,25 @@ local function safeCall(fn, ...)
     return ok, res
 end
 
+-- Add this helper function at top of file (after line 50):
+local function getArrowChar(direction)
+    local unicode = direction == "down" and "▼" or "▲"
+    local fallback = direction == "down" and "v" or "^"
+    
+    -- Test if Unicode is supported
+    local success = pcall(function()
+        local testLabel = Instance.new("TextLabel")
+        testLabel.Text = unicode
+        testLabel.Font = Enum.Font.Gotham
+        testLabel.TextSize = 12
+        local textSize = game:GetService("TextService"):GetTextSize(unicode, 12, Enum.Font.Gotham, Vector2.new(1000, 1000))
+        testLabel:Destroy()
+        return textSize.X > 0
+    end)
+    
+    return success and unicode or fallback
+end
+
 -- Tween creation helper (safe)
 local function safeTweenCreate(obj, props, options)
     if not obj or not props then return nil end
@@ -1448,7 +1467,7 @@ function SectionObj:NewDropdown(name, options, callback)
 
     -- Add dropdown arrow indicator
     local arrow = Instance.new("TextLabel")
-    arrow.Text = "▼"
+    arrow.Text = getArrowChar("down")
     arrow.Size = UDim2.new(0, 20, 1, 0)
     arrow.Position = UDim2.new(1, -20, 0, 0)
     arrow.BackgroundTransparency = 1
@@ -1466,7 +1485,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
 
     local function closeOptions()
         if optionsFrame and optionsFrame.Parent and optionsFrame.Visible then
-            arrow.Text = "▼"
+            arrow.Text = getArrowChar("up")
             
             -- Animate close
             local closeTween = tween(optionsFrame, {
