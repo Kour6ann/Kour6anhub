@@ -411,7 +411,7 @@ ScreenGui.Parent = GuiParent
 
     local Title = Instance.new("TextLabel")
     Title.Text = title or "Kour6anHub"
-    Title.Size = UDim2.new(1, -10, 1, 0)
+    Title.Size = UDim2.new(1, -90, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
     Title.TextColor3 = theme.Text
@@ -420,72 +420,98 @@ ScreenGui.Parent = GuiParent
     Title.TextSize = 16
     Title.Parent = Topbar
 
+    -- Minimize Button
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -70, 0.5, -15)
+MinimizeBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+MinimizeBtn.TextColor3 = theme.Text
+MinimizeBtn.Font = Enum.Font.GothamBold
+MinimizeBtn.TextSize = 16
+MinimizeBtn.Text = "−" -- Unicode minus sign
+MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.Parent = Topbar
+
+local MinimizeBtnCorner = Instance.new("UICorner")
+MinimizeBtnCorner.CornerRadius = UDim.new(0, 6)
+MinimizeBtnCorner.Parent = MinimizeBtn
+
+-- Close Button (X)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69) -- Red background
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255) -- White text
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+CloseBtn.Text = "×" -- Unicode multiplication sign (looks like X)
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Topbar
+
+local CloseBtnCorner = Instance.new("UICorner")
+CloseBtnCorner.CornerRadius = UDim.new(0, 6)
+CloseBtnCorner.Parent = CloseBtn
+
+-- Minimize Button Functionality
+MinimizeBtn.MouseButton1Click:Connect(function()
+    Window:ToggleMinimize()
+end)
+
+-- Minimize Button Hover Effects
+debouncedHover(MinimizeBtn,
+    function()
+        tween(MinimizeBtn, {
+            BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(MinimizeBtn, {
+            BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
+            Size = UDim2.new(0, 30, 0, 30)
+        }, {duration = 0.1})
+    end
+)
+
+-- Close Button Functionality
+CloseBtn.MouseButton1Click:Connect(function()
+    -- Animate button press
+    local pressTween = tween(CloseBtn, {
+        Size = UDim2.new(0, 28, 0, 28),
+        BackgroundColor3 = Color3.fromRGB(200, 35, 51)
+    }, {duration = 0.08})
+    
+    if pressTween then
+        local conn
+        conn = pressTween.Completed:Connect(function()
+            pcall(function() conn:Disconnect() end)
+            Window:Destroy()
+        end)
+    else
+        task.delay(0.08, function()
+            Window:Destroy()
+        end)
+    end
+end)
+
+-- Close Button Hover Effects
+debouncedHover(CloseBtn,
+    function()
+        tween(CloseBtn, {
+            BackgroundColor3 = Color3.fromRGB(240, 73, 89),
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(CloseBtn, {
+            BackgroundColor3 = Color3.fromRGB(220, 53, 69),
+            Size = UDim2.new(0, 30, 0, 30)
+        }, {duration = 0.1})
+    end
+)
+
     local globalConnTracker = makeConnectionTracker()
 
-    -- ===== Insert after Title.Parent = Topbar =====
--- Right-side control buttons: minimize and close (destroy)
-local ControlsFrame = Instance.new("Frame")
-ControlsFrame.Size = UDim2.new(0, 80, 1, 0)
-ControlsFrame.Position = UDim2.new(1, -80, 0, 0)
-ControlsFrame.BackgroundTransparency = 1
-ControlsFrame.Parent = Topbar
-
-local controlsLayout = Instance.new("UIListLayout")
-controlsLayout.FillDirection = Enum.FillDirection.Horizontal
-controlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-controlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
-controlsLayout.Padding = UDim.new(0, 6)
-controlsLayout.Parent = ControlsFrame
-
-local function makeTopButton(text, tooltip)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(0, 28, 0, 28)
-    b.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
-    b.AutoButtonColor = false
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 18
-    b.Text = text
-    b.TextColor3 = theme.Text
-    b.Parent = ControlsFrame
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = b
-    return b
-end
-
-local MinimizeBtn = makeTopButton("—", "Minimize")
-local CloseBtn    = makeTopButton("✕", "Close")
-
--- Hook up minimize and close with connection tracking
-local minimizeConn = MinimizeBtn.MouseButton1Click:Connect(function()
-    -- Use Window:ToggleMinimize (will be available right after Window table is constructed)
-    pcall(function() 
-        if Window and type(Window.ToggleMinimize) == "function" then
-            Window:ToggleMinimize()
-        end
-    end)
-end)
-globalConnTracker:add(minimizeConn)
-
-local closeConn = CloseBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        if Window and type(Window.Destroy) == "function" then
-            Window:Destroy()
-        else
-            -- fallback: destroy screen gui directly
-            if ScreenGui then pcall(function() ScreenGui:Destroy() end) end
-        end
-    end)
-end)
-globalConnTracker:add(closeConn)
-
--- Hover visuals for control buttons
-debouncedHover(MinimizeBtn,
-    function() tween(MinimizeBtn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.08}) end,
-    function() tween(MinimizeBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.08}) end
-)
-debouncedHover(CloseBtn,
-    function() tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(200,60,60)}, {duration = 0.08}) end,
-    function() tween(CloseBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.08}) end
-)  
     -- make draggable and keep its connections
     local dragTracker = makeDraggable(Main, Topbar)
     if dragTracker then
