@@ -1200,26 +1200,25 @@ function SectionObj:NewSlider(text, min, max, default, callback)
         local relativeX = inputPos.X - sliderBg.AbsolutePosition.X
         local relativePos = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
         
-        local newValue = min + (max - min) * relativePos
-        newValue = roundValue(newValue)
-        
-        -- Clamp the value
-        newValue = math.clamp(newValue, min, max)
-        currentValue = newValue
-        
-        -- Update UI
-        local finalRel = (newValue - min) / (max - min)
-        
-        tween(fill, {Size = UDim2.new(finalRel, 0, 1, 0)}, {duration = 0.05})
-        tween(knob, {Position = UDim2.new(finalRel, -8, 0.5, -8)}, {duration = 0.05})
-        
-        valueLbl.Text = tostring(newValue)
-        
-        -- Call callback
-        if callback and type(callback) == "function" then
-            safeCallback(callback, newValue)
-        end
-    end
+       local newValue = min + (max - min) * relativePos
+       newValue = roundValue(newValue)
+
+      -- Clamp the value BEFORE callback
+       newValue = math.clamp(newValue, min, max)
+       currentValue = newValue
+
+       -- Update UI
+       local finalRel = (newValue - min) / (max - min)
+
+       tween(fill, {Size = UDim2.new(finalRel, 0, 1, 0)}, {duration = 0.05})
+       tween(knob, {Position = UDim2.new(finalRel, -8, 0.5, -8)}, {duration = 0.05})
+
+       valueLbl.Text = tostring(newValue)
+
+    -- Call callback with properly clamped value
+       if callback and type(callback) == "function" then
+         safeCallback(callback, newValue)
+       end
 
     -- Mouse/touch interactions
     local beganConn = sliderBg.InputBegan:Connect(function(input)
