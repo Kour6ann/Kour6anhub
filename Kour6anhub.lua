@@ -1448,7 +1448,7 @@ function SectionObj:NewDropdown(name, options, callback)
 
     -- Add dropdown arrow indicator
     local arrow = Instance.new("TextLabel")
-    arrow.Text = getArrowChar("down")
+    arrow.Text = "▼"
     arrow.Size = UDim2.new(0, 20, 1, 0)
     arrow.Position = UDim2.new(1, -20, 0, 0)
     arrow.BackgroundTransparency = 1
@@ -1544,7 +1544,7 @@ local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
 
         createOptionsFrame()
         open = true
-        arrow.Text = getArrowChar("up")
+        arrow.Text = "▲"
 
         -- Clear existing option buttons
         optionButtons = {}
