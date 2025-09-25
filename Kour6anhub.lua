@@ -399,28 +399,31 @@ ScreenGui.Parent = GuiParent
     MainCorner.CornerRadius = UDim.new(0, 8)
     MainCorner.Parent = Main
 
-    -- Topbar
-    local Topbar = Instance.new("Frame")
-    Topbar.Size = UDim2.new(1, 0, 0, 40)
-    Topbar.BackgroundColor3 = theme.SectionBackground
-    Topbar.Parent = Main
+    -- 1. First, create the topbar and buttons (WITHOUT the click connections):
 
-    local TopbarCorner = Instance.new("UICorner")
-    TopbarCorner.CornerRadius = UDim.new(0, 8)
-    TopbarCorner.Parent = Topbar
+-- Topbar with window controls
+local Topbar = Instance.new("Frame")
+Topbar.Size = UDim2.new(1, 0, 0, 40)
+Topbar.BackgroundColor3 = theme.SectionBackground
+Topbar.Parent = Main
 
-    local Title = Instance.new("TextLabel")
-    Title.Text = title or "Kour6anHub"
-    Title.Size = UDim2.new(1, -90, 1, 0)
-    Title.Position = UDim2.new(0, 10, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.TextColor3 = theme.Text
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 16
-    Title.Parent = Topbar
+local TopbarCorner = Instance.new("UICorner")
+TopbarCorner.CornerRadius = UDim.new(0, 8)
+TopbarCorner.Parent = Topbar
 
-    -- Minimize Button
+-- Title (adjusted to make room for buttons)
+local Title = Instance.new("TextLabel")
+Title.Text = title or "Kour6anHub"
+Title.Size = UDim2.new(1, -90, 1, 0)
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = theme.Text
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Parent = Topbar
+
+-- Minimize Button
 local MinimizeBtn = Instance.new("TextButton")
 MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
 MinimizeBtn.Position = UDim2.new(1, -70, 0.5, -15)
@@ -428,7 +431,7 @@ MinimizeBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
 MinimizeBtn.TextColor3 = theme.Text
 MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.TextSize = 16
-MinimizeBtn.Text = "−" -- Unicode minus sign
+MinimizeBtn.Text = "−"
 MinimizeBtn.AutoButtonColor = false
 MinimizeBtn.Parent = Topbar
 
@@ -440,11 +443,11 @@ MinimizeBtnCorner.Parent = MinimizeBtn
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 30, 0, 30)
 CloseBtn.Position = UDim2.new(1, -35, 0.5, -15)
-CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69) -- Red background
-CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255) -- White text
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 53, 69)
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 16
-CloseBtn.Text = "×" -- Unicode multiplication sign (looks like X)
+CloseBtn.Text = "×"
 CloseBtn.AutoButtonColor = false
 CloseBtn.Parent = Topbar
 
@@ -452,12 +455,54 @@ local CloseBtnCorner = Instance.new("UICorner")
 CloseBtnCorner.CornerRadius = UDim.new(0, 6)
 CloseBtnCorner.Parent = CloseBtn
 
--- Minimize Button Functionality
-MinimizeBtn.MouseButton1Click:Connect(function()
-    Window:ToggleMinimize()
-end)
+-- 2. Then, AFTER the Window object is created and all methods are defined, add this section:
 
--- Minimize Button Hover Effects
+-- Setup button functionality (add this AFTER the Window object is fully created)
+-- This should go right before the "return Window" line in your CreateLib function
+
+-- Minimize Button Click Handler
+local minimizeConn = MinimizeBtn.MouseButton1Click:Connect(function()
+    print("Minimize button clicked") -- Debug print
+    if Window and Window.ToggleMinimize then
+        Window:ToggleMinimize()
+    else
+        warn("Window:ToggleMinimize not available")
+    end
+end)
+globalConnTracker:add(minimizeConn)
+
+-- Close Button Click Handler  
+local closeConn = CloseBtn.MouseButton1Click:Connect(function()
+    print("Close button clicked") -- Debug print
+    -- Animate button press
+    local pressTween = tween(CloseBtn, {
+        Size = UDim2.new(0, 28, 0, 28),
+        BackgroundColor3 = Color3.fromRGB(200, 35, 51)
+    }, {duration = 0.08})
+    
+    if pressTween then
+        local conn
+        conn = pressTween.Completed:Connect(function()
+            pcall(function() conn:Disconnect() end)
+            if Window and Window.Destroy then
+                Window:Destroy()
+            else
+                warn("Window:Destroy not available")
+            end
+        end)
+    else
+        task.delay(0.08, function()
+            if Window and Window.Destroy then
+                Window:Destroy()
+            else
+                warn("Window:Destroy not available")
+            end
+        end)
+    end
+end)
+globalConnTracker:add(closeConn)
+
+-- Hover Effects (these can stay where they are since they don't depend on Window methods)
 debouncedHover(MinimizeBtn,
     function()
         tween(MinimizeBtn, {
@@ -473,28 +518,6 @@ debouncedHover(MinimizeBtn,
     end
 )
 
--- Close Button Functionality
-CloseBtn.MouseButton1Click:Connect(function()
-    -- Animate button press
-    local pressTween = tween(CloseBtn, {
-        Size = UDim2.new(0, 28, 0, 28),
-        BackgroundColor3 = Color3.fromRGB(200, 35, 51)
-    }, {duration = 0.08})
-    
-    if pressTween then
-        local conn
-        conn = pressTween.Completed:Connect(function()
-            pcall(function() conn:Disconnect() end)
-            Window:Destroy()
-        end)
-    else
-        task.delay(0.08, function()
-            Window:Destroy()
-        end)
-    end
-end)
-
--- Close Button Hover Effects
 debouncedHover(CloseBtn,
     function()
         tween(CloseBtn, {
@@ -509,6 +532,12 @@ debouncedHover(CloseBtn,
         }, {duration = 0.1})
     end
 )
+
+-- Store references in Window object for theme updates
+Window._minimizeBtn = MinimizeBtn
+Window._closeBtn = CloseBtn
+Window._topbar = Topbar
+Window._title = Title
 
     local globalConnTracker = makeConnectionTracker()
 
