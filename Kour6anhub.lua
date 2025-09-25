@@ -293,8 +293,9 @@ function Kour6anHub.CreateLib(title, themeName)
     end
     ScreenGui = Instance.new("ScreenGui")
     ScreenGui.Name = "Kour6anHub"
+    ScreenGui.DisplayOrder = 999999999
     ScreenGui.Parent = GuiParent
-
+    
     -- Main frame
     local Main = Instance.new("Frame")
     Main.Size = UDim2.new(0, 600, 0, 400)
