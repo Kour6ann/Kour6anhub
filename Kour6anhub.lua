@@ -659,94 +659,136 @@ ScreenGui.Parent = GuiParent
     end
 
     function Window:SetTheme(newThemeName)
-        if not newThemeName then return end
-        local foundTheme = nil
-        if Themes[newThemeName] then
-            foundTheme = Themes[newThemeName]
-        else
-            local lowerTarget = string.lower(tostring(newThemeName))
-            for k,v in pairs(Themes) do
-                if string.lower(k) == lowerTarget then
-                    foundTheme = v
-                    break
+    if not newThemeName then return end
+    local foundTheme = nil
+    
+    -- Find theme case-insensitively
+    if Themes[newThemeName] then
+        foundTheme = Themes[newThemeName]
+    else
+        local lowerTarget = string.lower(tostring(newThemeName))
+        for k,v in pairs(Themes) do
+            if string.lower(k) == lowerTarget then
+                foundTheme = v
+                break
+            end
+        end
+    end
+    
+    if not foundTheme then 
+        warn("Theme not found:", newThemeName)
+        return 
+    end
+    
+    theme = foundTheme
+    Window.theme = theme
+
+    -- Update main window elements
+    pcall(function()
+        if Main and Main.Parent then 
+            Main.BackgroundColor3 = theme.Background 
+            -- Force refresh
+            Main.BackgroundTransparency = Main.BackgroundTransparency
+        end
+        if Topbar and Topbar.Parent then 
+            Topbar.BackgroundColor3 = theme.SectionBackground 
+            Topbar.BackgroundTransparency = Topbar.BackgroundTransparency
+        end
+        if Title and Title.Parent then 
+            Title.TextColor3 = theme.Text 
+        end
+        if TabContainer and TabContainer.Parent then 
+            TabContainer.BackgroundColor3 = theme.TabBackground 
+            TabContainer.BackgroundTransparency = TabContainer.BackgroundTransparency
+        end
+    end)
+
+    -- Update all tabs and their content
+    for _, entry in ipairs(Tabs) do
+        local btn = entry.Button
+        local frame = entry.Frame
+        
+        if btn and btn.Parent then
+            local active = btn:GetAttribute("active") or false
+            btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
+            btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
+            -- Force refresh
+            btn.BackgroundTransparency = btn.BackgroundTransparency
+        end
+
+        if frame and frame.Parent then
+            -- Update scrolling frame colors
+            if frame:IsA("ScrollingFrame") then
+                frame.ScrollBarImageColor3 = theme.Accent or Color3.fromRGB(100, 100, 100)
+            end
+            
+            -- Recursively update all descendants
+            for _, child in ipairs(frame:GetDescendants()) do
+                if not child or not child.Parent then continue end
+                
+                if child:IsA("Frame") then
+                    if child.Name == "_section" then
+                        child.BackgroundColor3 = theme.SectionBackground
+                        child.BackgroundTransparency = child.BackgroundTransparency
+                    elseif child.Name == "_dropdownOptions" then
+                        child.BackgroundColor3 = theme.SectionBackground
+                        child.BackgroundTransparency = child.BackgroundTransparency
+                    elseif child.Name:find("_optionsScroll") then
+                        child.ScrollBarImageColor3 = theme.Accent or Color3.fromRGB(100, 100, 100)
+                    end
+                elseif child:IsA("TextLabel") then
+                    if child.Font == Enum.Font.GothamBold then
+                        child.TextColor3 = theme.SubText
+                    else
+                        child.TextColor3 = theme.Text
+                    end
+                elseif child:IsA("TextButton") then
+                    child.TextColor3 = theme.Text
+                    if not child:GetAttribute("_isToggleState") then
+                        child.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+                    else
+                        local tog = child:GetAttribute("_toggle")
+                        child.BackgroundColor3 = tog and theme.Accent or (theme.ButtonBackground or theme.SectionBackground)
+                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
+                    end
+                    child.BackgroundTransparency = child.BackgroundTransparency
+                elseif child:IsA("TextBox") then
+                    child.BackgroundColor3 = theme.InputBackground or theme.SectionBackground
+                    child.TextColor3 = theme.Text
+                    child.BackgroundTransparency = child.BackgroundTransparency
+                elseif child:IsA("UIStroke") then
+                    -- Update stroke colors for dropdown borders
+                    child.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
                 end
             end
         end
-        if not foundTheme then return end
-        theme = foundTheme
-        Window.theme = theme
-
-        pcall(function()
-            if Main and Main.Parent then Main.BackgroundColor3 = theme.Background end
-            if Topbar and Topbar.Parent then Topbar.BackgroundColor3 = theme.SectionBackground end
-            if Title and Title.Parent then Title.TextColor3 = theme.Text end
-            if TabContainer and TabContainer.Parent then TabContainer.BackgroundColor3 = theme.TabBackground end
-
-            for _, entry in ipairs(Tabs) do
-                local btn = entry.Button
-                local frame = entry.Frame
-                local active = false
-                if btn and btn.Parent then
-                    local ok, attr = pcall(function() return btn:GetAttribute("active") end)
-                    if ok then active = attr end
-                    btn.BackgroundColor3 = active and theme.Accent or theme.SectionBackground
-                    btn.TextColor3 = active and Color3.fromRGB(255,255,255) or theme.Text
-                end
-
-                if frame and frame.Parent then
-                    for _, child in ipairs(frame:GetDescendants()) do
-                        if child and child.Parent then
-                            if child:IsA("Frame") then
-                                if child.Name == "_section" then
-                                    pcall(function() child.BackgroundColor3 = theme.SectionBackground end)
-                                end
-                            elseif child:IsA("TextLabel") then
-                                pcall(function()
-                                    if child.Font == Enum.Font.GothamBold then
-                                        child.TextColor3 = theme.SubText
-                                    else
-                                        child.TextColor3 = theme.Text
-                                    end
-                                end)
-                            elseif child:IsA("TextButton") then
-                                pcall(function()
-                                    child.TextColor3 = theme.Text
-                                    if not child:GetAttribute("_isToggleState") then
-                                        child.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
-                                    else
-                                        local tog = child:GetAttribute("_toggle")
-                                        child.BackgroundColor3 = tog and theme.Accent or (theme.ButtonBackground or theme.SectionBackground)
-                                        child.TextColor3 = tog and Color3.fromRGB(255,255,255) or theme.Text
-                                    end
-                                end)
-                            elseif child:IsA("TextBox") then
-                                pcall(function()
-                                    child.BackgroundColor3 = theme.InputBackground or theme.SectionBackground
-                                    child.TextColor3 = theme.Text
-                                end)
-                            end
-                        end
-                    end
-                end
-            end
-
-            for _, notif in ipairs(Window._notifications) do
-                if notif and notif.Parent then
-                    -- find accent frame (the left colored bar)
-                    for _, c in ipairs(notif:GetChildren()) do
-                        if c:IsA("Frame") and c.Size and c.Size.X.Offset == 6 then
-                            pcall(function() c.BackgroundColor3 = theme.Accent end)
-                        elseif c:IsA("TextLabel") then
-                            pcall(function() c.TextColor3 = theme.Text end)
-                        elseif c:IsA("Frame") and c ~= notif then
-                            pcall(function() c.BackgroundColor3 = theme.SectionBackground end)
-                        end
-                    end
-                    pcall(function() notif.BackgroundColor3 = theme.SectionBackground end)
-                end
-            end
-        end)
     end
+
+    -- Update notifications
+    for _, notif in ipairs(Window._notifications) do
+        if notif and notif.Parent then
+            notif.BackgroundColor3 = theme.SectionBackground
+            notif.BackgroundTransparency = notif.BackgroundTransparency
+            
+            for _, c in ipairs(notif:GetChildren()) do
+                if c:IsA("Frame") and c.Size and c.Size.X.Offset == 6 then
+                    c.BackgroundColor3 = theme.Accent
+                elseif c:IsA("TextLabel") then
+                    c.TextColor3 = theme.Text
+                end
+            end
+        end
+    end
+    
+    -- Force a render update
+    if Window.ScreenGui then
+        Window.ScreenGui.Enabled = false
+        task.wait()
+        Window.ScreenGui.Enabled = true
+    end
+    
+    print("Theme successfully changed to:", newThemeName)
+end
 
     -- Toggle UI methods
     function Window:Hide()
@@ -1497,8 +1539,6 @@ end
             end
 
  -- DROPDOWN FIX for Kour6anHub Library
--- Replace the NewDropdown function in the library with this fixed version
-
 function SectionObj:NewDropdown(name, options, callback)
     -- Ensure options is a proper array of strings
     options = options or {}
@@ -1515,10 +1555,10 @@ function SectionObj:NewDropdown(name, options, callback)
     end
     options = validOptions
     
-    -- Set current to first valid option or nil
     local current = options[1] or nil
     local open = false
     local optionsFrame = nil
+    local scrollFrame = nil
     local optionButtons = {}
     local selectedIndex = current and 1 or nil
 
@@ -1528,7 +1568,6 @@ function SectionObj:NewDropdown(name, options, callback)
     wrap.Parent = Section
 
     local btn = Instance.new("TextButton")
-    -- FIX: Proper text display logic
     local displayText = current or "Select..."
     btn.Text = (name and name .. ": " or "") .. displayText
     btn.Size = UDim2.new(1, 0, 1, 0)
@@ -1563,21 +1602,22 @@ function SectionObj:NewDropdown(name, options, callback)
 
     local function getMaxDropdownHeight()
         local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
-        return math.min(150, math.floor(viewport.Y * 0.25))
+        return math.min(200, math.floor(viewport.Y * 0.3))
     end
-    local MAX_DROPDOWN_HEIGHT = getMaxDropdownHeight()
-
+    
     local function closeOptions()
         if optionsFrame and optionsFrame.Parent and optionsFrame.Visible then
-            arrow.Text = getArrowChar("down") -- FIX: Corrected arrow direction
+            arrow.Text = getArrowChar("down")
             
-            -- Animate close
             local closeTween = tween(optionsFrame, {
                 Size = UDim2.new(1, 0, 0, 0),
                 BackgroundTransparency = 1
             }, {duration = 0.12})
             
-            -- Hide option buttons
+            if scrollFrame then
+                tween(scrollFrame, {ScrollBarImageTransparency = 1}, {duration = 0.08})
+            end
+            
             for _, optBtn in pairs(optionButtons) do
                 if optBtn and optBtn.Parent then
                     tween(optBtn, {BackgroundTransparency = 1, TextTransparency = 1}, {duration = 0.08})
@@ -1598,7 +1638,6 @@ function SectionObj:NewDropdown(name, options, callback)
         open = false
         wrap.Size = UDim2.new(1, 0, 0, 34)
         
-        -- Clear global dropdown reference
         if Window._currentOpenDropdown == closeOptions then
             Window._currentOpenDropdown = nil
         end
@@ -1609,6 +1648,7 @@ function SectionObj:NewDropdown(name, options, callback)
             pcall(function() optionsFrame:Destroy() end)
         end
         
+        -- Create main options container
         optionsFrame = Instance.new("Frame")
         optionsFrame.Name = "_dropdownOptions"
         optionsFrame.BackgroundColor3 = theme.SectionBackground
@@ -1624,14 +1664,27 @@ function SectionObj:NewDropdown(name, options, callback)
         corner.CornerRadius = UDim.new(0, 6)
         corner.Parent = optionsFrame
 
-        -- Add border/shadow effect
         local border = Instance.new("UIStroke")
         border.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
         border.Thickness = 1
         border.Transparency = 0.5
         border.Parent = optionsFrame
 
-        return optionsFrame
+        -- Create ScrollingFrame for options
+        scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "_optionsScroll"
+        scrollFrame.Size = UDim2.new(1, -4, 1, -4)
+        scrollFrame.Position = UDim2.new(0, 2, 0, 2)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 4
+        scrollFrame.ScrollBarImageColor3 = theme.Accent or Color3.fromRGB(100, 100, 100)
+        scrollFrame.ScrollBarImageTransparency = 0.3
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.ZIndex = 101
+        scrollFrame.Parent = optionsFrame
+
+        return optionsFrame, scrollFrame
     end
 
     local function openOptions()
@@ -1640,7 +1693,6 @@ function SectionObj:NewDropdown(name, options, callback)
             return
         end
 
-        -- Close any other open dropdowns
         if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
             pcall(function() Window._currentOpenDropdown() end)
         end
@@ -1649,32 +1701,33 @@ function SectionObj:NewDropdown(name, options, callback)
         open = true
         arrow.Text = getArrowChar("up")
 
-        -- Clear existing option buttons
         optionButtons = {}
 
-        -- Calculate optimal height
+        -- Calculate dimensions
         local itemHeight = 28
-        local maxItems = math.floor(MAX_DROPDOWN_HEIGHT / itemHeight)
-        local actualItems = math.min(#options, maxItems)
-        local finalHeight = actualItems * itemHeight + 4
+        local maxHeight = getMaxDropdownHeight()
+        local totalContentHeight = #options * itemHeight
+        local frameHeight = math.min(maxHeight, totalContentHeight)
 
-        -- Create option buttons
+        -- Set canvas size for scrolling
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalContentHeight)
+
+        -- Create option buttons in the scroll frame
         for i, opt in ipairs(options) do
             local optBtn = Instance.new("TextButton")
-            optBtn.Size = UDim2.new(1, -4, 0, itemHeight - 2)
-            optBtn.Position = UDim2.new(0, 2, 0, 2 + (i-1) * itemHeight)
+            optBtn.Size = UDim2.new(1, -8, 0, itemHeight - 2)
+            optBtn.Position = UDim2.new(0, 4, 0, (i-1) * itemHeight + 1)
             optBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
             optBtn.Font = Enum.Font.Gotham
             optBtn.TextSize = 12
             optBtn.TextColor3 = theme.Text
             optBtn.AutoButtonColor = false
-            -- FIX: Ensure we use the string value, not table reference
             optBtn.Text = tostring(opt)
             optBtn.TextXAlignment = Enum.TextXAlignment.Left
             optBtn.BackgroundTransparency = 1
             optBtn.TextTransparency = 1
-            optBtn.ZIndex = 101
-            optBtn.Parent = optionsFrame
+            optBtn.ZIndex = 102
+            optBtn.Parent = scrollFrame
 
             local optCorner = Instance.new("UICorner")
             optCorner.CornerRadius = UDim.new(0, 4)
@@ -1685,7 +1738,6 @@ function SectionObj:NewDropdown(name, options, callback)
             optPadding.PaddingRight = UDim.new(0, 8)
             optPadding.Parent = optBtn
 
-            -- FIX: Proper selection state checking
             if current and tostring(opt) == tostring(current) then
                 selectedIndex = i
                 optBtn.BackgroundColor3 = theme.Accent
@@ -1705,15 +1757,11 @@ function SectionObj:NewDropdown(name, options, callback)
                 end
             end)
 
-            -- Click handler
             local clickConn = optBtn.MouseButton1Click:Connect(function()
                 selectedIndex = i
-                -- FIX: Store the actual string value, not index
                 current = options[i]
-                -- FIX: Update button text with proper string
                 btn.Text = (name and name .. ": " or "") .. tostring(current)
                 
-                -- Update all button states
                 for idx, button in pairs(optionButtons) do
                     if button and button.Parent then
                         if idx == selectedIndex then
@@ -1726,29 +1774,29 @@ function SectionObj:NewDropdown(name, options, callback)
                     end
                 end
                 
-                -- FIX: Pass the actual string value to callback
                 if callback and type(callback) == "function" then
                     safeCallback(callback, current)
                 end
                 
-                task.wait(0.1) -- Brief delay for visual feedback
+                task.wait(0.1)
                 closeOptions()
             end)
 
             optionButtons[i] = optBtn
         end
 
-        -- Show the options frame
+        -- Show and animate
         optionsFrame.Visible = true
         optionsFrame.BackgroundTransparency = 1
+        scrollFrame.ScrollBarImageTransparency = 1
 
-        -- Animate open
         tween(optionsFrame, {
-            Size = UDim2.new(1, 0, 0, finalHeight),
+            Size = UDim2.new(1, 0, 0, frameHeight + 4),
             BackgroundTransparency = 0
         }, {duration = 0.15})
 
-        -- Animate option buttons appearing
+        tween(scrollFrame, {ScrollBarImageTransparency = 0.3}, {duration = 0.15})
+
         for i, optBtn in pairs(optionButtons) do
             task.delay(i * 0.02, function()
                 if optBtn and optBtn.Parent then
@@ -1760,11 +1808,10 @@ function SectionObj:NewDropdown(name, options, callback)
             end)
         end
 
-        wrap.Size = UDim2.new(1, 0, 0, 34 + finalHeight + 2)
+        wrap.Size = UDim2.new(1, 0, 0, 34 + frameHeight + 6)
         Window._currentOpenDropdown = closeOptions
     end
 
-    -- Main button click handler
     btn.MouseButton1Click:Connect(function()
         if open then
             closeOptions()
@@ -1773,7 +1820,7 @@ function SectionObj:NewDropdown(name, options, callback)
         end
     end)
 
-    -- Close dropdown when clicking outside
+    -- Outside click detection
     local outsideClickConn
     outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed or not open then return end
@@ -1790,10 +1837,8 @@ function SectionObj:NewDropdown(name, options, callback)
         end
     end)
 
-    -- Track connection for proper cleanup
     globalConnTracker:add(outsideClickConn)
 
-    -- Cleanup connection when wrap is destroyed
     local ancestryConn
     ancestryConn = wrap.AncestryChanged:Connect(function()
         if not wrap.Parent then
@@ -1807,7 +1852,6 @@ function SectionObj:NewDropdown(name, options, callback)
 
     return {
         Set = function(value)
-            -- FIX: Proper value setting and validation
             local stringValue = tostring(value)
             for i, opt in ipairs(options) do
                 if tostring(opt) == stringValue then
@@ -1817,7 +1861,6 @@ function SectionObj:NewDropdown(name, options, callback)
                     return true
                 end
             end
-            -- If not found in options, still set it
             current = stringValue
             btn.Text = (name and name .. ": " or "") .. stringValue
             return false
@@ -1826,13 +1869,11 @@ function SectionObj:NewDropdown(name, options, callback)
             return current
         end,
         SetOptions = function(newOptions)
-            -- FIX: Proper options validation and conversion
             newOptions = newOptions or {}
             if type(newOptions) ~= "table" then
                 newOptions = {}
             end
             
-            -- Convert to strings
             local validNewOptions = {}
             for i, opt in ipairs(newOptions) do
                 if opt ~= nil then
