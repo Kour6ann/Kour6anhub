@@ -689,10 +689,25 @@ ScreenGui.Parent = GuiParent
     end
 
     function Window:SetToggleKey(keyEnum)
-        if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
-            Window._toggleKey = keyEnum
+    if typeof(keyEnum) == "EnumItem" and keyEnum.EnumType == Enum.KeyCode then
+        Window._toggleKey = keyEnum
+        
+        -- Disconnect existing listener if any
+        if Window._inputConn then
+            pcall(function() Window._inputConn:Disconnect() end)
         end
+        
+        -- Create new input listener
+        Window._inputConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+            if gameProcessed then return end
+            if input.UserInputType == Enum.UserInputType.Keyboard and 
+               input.KeyCode == Window._toggleKey then
+                Window:ToggleUI()
+            end
+        end)
+        globalConnTracker:add(Window._inputConn)
     end
+end
 
     -- Minimize/Restore methods
     function Window:Minimize()
