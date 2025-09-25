@@ -1217,38 +1217,33 @@ function SectionObj:NewSlider(text, min, max, default, callback)
     knobStroke.Parent = knob
 
     local dragging = false
-    local dragStart = nil
 
     local function updateSlider(inputPos)
         local relativeX = inputPos.X - sliderBg.AbsolutePosition.X
         local relativePos = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
         
-       local newValue = min + (max - min) * relativePos
-       newValue = roundValue(newValue)
+        local newValue = min + (max - min) * relativePos
+        newValue = roundValue(newValue)
+        newValue = math.clamp(newValue, min, max)
+        currentValue = newValue
 
-      -- Clamp the value BEFORE callback
-       newValue = math.clamp(newValue, min, max)
-       currentValue = newValue
+        -- Update UI
+        local finalRel = (newValue - min) / (max - min)
+        tween(fill, {Size = UDim2.new(finalRel, 0, 1, 0)}, {duration = 0.05})
+        tween(knob, {Position = UDim2.new(finalRel, -8, 0.5, -8)}, {duration = 0.05})
+        valueLbl.Text = tostring(newValue)
 
-       -- Update UI
-       local finalRel = (newValue - min) / (max - min)
-
-       tween(fill, {Size = UDim2.new(finalRel, 0, 1, 0)}, {duration = 0.05})
-       tween(knob, {Position = UDim2.new(finalRel, -8, 0.5, -8)}, {duration = 0.05})
-
-       valueLbl.Text = tostring(newValue)
-
-    -- Call callback with properly clamped value
-       if callback and type(callback) == "function" then
-         safeCallback(callback, newValue)
-       end
+        -- Call callback with properly clamped value
+        if callback and type(callback) == "function" then
+            safeCallback(callback, newValue)
+        end
+    end
 
     -- Mouse/touch interactions
     local beganConn = sliderBg.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or 
            input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
-            dragStart = input.Position
             updateSlider(input.Position)
             
             -- Visual feedback
