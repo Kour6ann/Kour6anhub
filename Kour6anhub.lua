@@ -311,34 +311,311 @@ ScreenGui.Parent = GuiParent
     MainCorner.CornerRadius = UDim.new(0, 8)
     MainCorner.Parent = Main
 
-    -- Topbar
-    local Topbar = Instance.new("Frame")
-    Topbar.Size = UDim2.new(1, 0, 0, 40)
-    Topbar.BackgroundColor3 = theme.SectionBackground
-    Topbar.Parent = Main
+    -- KOUR6ANHUB TOPBAR DRAGGING & CONTROL BUTTONS PATCH
+-- Replace the topbar creation section in the CreateLib function with this enhanced version
 
-    local TopbarCorner = Instance.new("UICorner")
-    TopbarCorner.CornerRadius = UDim.new(0, 8)
-    TopbarCorner.Parent = Topbar
+-- Find this section in the CreateLib function and replace it:
+-- Topbar (ENHANCED VERSION WITH DRAGGING AND CONTROL BUTTONS)
+local Topbar = Instance.new("Frame")
+Topbar.Size = UDim2.new(1, 0, 0, 40)
+Topbar.BackgroundColor3 = theme.SectionBackground
+Topbar.Parent = Main
 
-    local Title = Instance.new("TextLabel")
-    Title.Text = title or "Kour6anHub"
-    Title.Size = UDim2.new(1, -10, 1, 0)
-    Title.Position = UDim2.new(0, 10, 0, 0)
-    Title.BackgroundTransparency = 1
-    Title.TextColor3 = theme.Text
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.Font = Enum.Font.GothamBold
-    Title.TextSize = 16
-    Title.Parent = Topbar
+local TopbarCorner = Instance.new("UICorner")
+TopbarCorner.CornerRadius = UDim.new(0, 8)
+TopbarCorner.Parent = Topbar
 
-    local globalConnTracker = makeConnectionTracker()
+-- Title label (adjusted to make room for buttons)
+local Title = Instance.new("TextLabel")
+Title.Text = title or "Kour6anHub"
+Title.Size = UDim2.new(1, -100, 1, 0) -- Reduced width for buttons
+Title.Position = UDim2.new(0, 10, 0, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = theme.Text
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Parent = Topbar
 
-    -- integrate any module-level global connections created earlier
-    for _, c in ipairs(_GLOBAL_CONN_REGISTRY) do
-        globalConnTracker:add(c)
+-- Control buttons container
+local ControlsFrame = Instance.new("Frame")
+ControlsFrame.Size = UDim2.new(0, 80, 1, -8)
+ControlsFrame.Position = UDim2.new(1, -84, 0, 4)
+ControlsFrame.BackgroundTransparency = 1
+ControlsFrame.Parent = Topbar
+
+local ControlsLayout = Instance.new("UIListLayout")
+ControlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ControlsLayout.FillDirection = Enum.FillDirection.Horizontal
+ControlsLayout.Padding = UDim.new(0, 4)
+ControlsLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+ControlsLayout.Parent = ControlsFrame
+
+-- Minimize Button
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Size = UDim2.new(0, 32, 0, 32)
+MinimizeButton.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+MinimizeButton.TextColor3 = theme.Text
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 16
+MinimizeButton.Text = "−"
+MinimizeButton.AutoButtonColor = false
+MinimizeButton.LayoutOrder = 1
+MinimizeButton.Parent = ControlsFrame
+
+local MinimizeCorner = Instance.new("UICorner")
+MinimizeCorner.CornerRadius = UDim.new(0, 6)
+MinimizeCorner.Parent = MinimizeButton
+
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Size = UDim2.new(0, 32, 0, 32)
+CloseButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 16
+CloseButton.Text = "×"
+CloseButton.AutoButtonColor = false
+CloseButton.LayoutOrder = 2
+CloseButton.Parent = ControlsFrame
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseButton
+
+-- Button hover effects
+debouncedHover(MinimizeButton,
+    function()
+        tween(MinimizeButton, {
+            BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
+            Size = UDim2.new(0, 34, 0, 34)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(MinimizeButton, {
+            BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
     end
-    _GLOBAL_CONN_REGISTRY = {}
+)
+
+debouncedHover(CloseButton,
+    function()
+        tween(CloseButton, {
+            BackgroundColor3 = Color3.fromRGB(255, 60, 60),
+            Size = UDim2.new(0, 34, 0, 34)
+        }, {duration = 0.1})
+    end,
+    function()
+        tween(CloseButton, {
+            BackgroundColor3 = Color3.fromRGB(220, 50, 50),
+            Size = UDim2.new(0, 32, 0, 32)
+        }, {duration = 0.1})
+    end
+)
+
+-- Button click handlers
+MinimizeButton.MouseButton1Click:Connect(function()
+    -- Visual feedback
+    local t1 = tween(MinimizeButton, {
+        BackgroundColor3 = theme.Accent,
+        Size = UDim2.new(0, 30, 0, 30)
+    }, {duration = 0.08})
+    
+    if t1 then
+        local c
+        c = t1.Completed:Connect(function()
+            pcall(function() c:Disconnect() end)
+            tween(MinimizeButton, {
+                BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
+                Size = UDim2.new(0, 32, 0, 32)
+            }, {duration = 0.12})
+        end)
+    end
+    
+    -- Toggle minimize/restore
+    Window:ToggleMinimize()
+end)
+
+CloseButton.MouseButton1Click:Connect(function()
+    -- Visual feedback
+    local t1 = tween(CloseButton, {
+        BackgroundColor3 = Color3.fromRGB(180, 40, 40),
+        Size = UDim2.new(0, 30, 0, 30)
+    }, {duration = 0.08})
+    
+    if t1 then
+        local c
+        c = t1.Completed:Connect(function()
+            pcall(function() c:Disconnect() end)
+            tween(CloseButton, {
+                BackgroundColor3 = Color3.fromRGB(220, 50, 50),
+                Size = UDim2.new(0, 32, 0, 32)
+            }, {duration = 0.12})
+        end)
+    end
+    
+    -- Hide the UI
+    Window:Hide()
+end)
+
+-- DRAGGING FUNCTIONALITY
+-- Create a draggable area (the entire topbar except buttons)
+local DragArea = Instance.new("Frame")
+DragArea.Size = UDim2.new(1, -88, 1, 0) -- Excludes button area
+DragArea.Position = UDim2.new(0, 0, 0, 0)
+DragArea.BackgroundTransparency = 1
+DragArea.Parent = Topbar
+
+-- Enhanced dragging system
+local dragging = false
+local dragStart = nil
+local startPos = nil
+local dragConnection = nil
+local releaseConnection = nil
+
+-- Mouse cursor change for drag area
+DragArea.MouseEnter:Connect(function()
+    if not dragging then
+        -- Change cursor to indicate draggable (if possible)
+        DragArea.BackgroundTransparency = 0.95
+        DragArea.BackgroundColor3 = theme.Accent
+    end
+end)
+
+DragArea.MouseLeave:Connect(function()
+    if not dragging then
+        DragArea.BackgroundTransparency = 1
+    end
+end)
+
+local function startDragging(input)
+    dragging = true
+    dragStart = input.Position
+    startPos = Main.Position
+    
+    -- Visual feedback
+    DragArea.BackgroundTransparency = 0.9
+    DragArea.BackgroundColor3 = theme.Accent
+    
+    -- Slight scale effect
+    tween(Main, {Size = UDim2.new(0, 598, 0, 398)}, {duration = 0.1})
+    
+    -- Connect to input changed
+    if dragConnection then dragConnection:Disconnect() end
+    dragConnection = UserInputService.InputChanged:Connect(function(movedInput)
+        if dragging and movedInput.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = movedInput.Position - dragStart
+            local newPosition = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+            Main.Position = newPosition
+        end
+    end)
+    
+    -- Connect to input ended
+    if releaseConnection then releaseConnection:Disconnect() end
+    releaseConnection = input.Changed:Connect(function()
+        if input.UserInputState == Enum.UserInputState.End then
+            dragging = false
+            DragArea.BackgroundTransparency = 1
+            
+            -- Restore size
+            tween(Main, {Size = UDim2.new(0, 600, 0, 400)}, {duration = 0.1})
+            
+            -- Store new position
+            Window._storedPosition = Main.Position
+            
+            -- Cleanup connections
+            if dragConnection then
+                dragConnection:Disconnect()
+                dragConnection = nil
+            end
+            if releaseConnection then
+                releaseConnection:Disconnect()
+                releaseConnection = nil
+            end
+        end
+    end)
+end
+
+-- Input began connection for dragging
+local dragBeganConnection = DragArea.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        startDragging(input)
+    end
+end)
+
+-- Track the drag connection for cleanup
+globalConnTracker:add(dragBeganConnection)
+
+-- Add double-click to minimize/restore functionality
+local lastClickTime = 0
+local DOUBLE_CLICK_TIME = 0.3
+
+Title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local currentTime = tick()
+        if currentTime - lastClickTime <= DOUBLE_CLICK_TIME then
+            -- Double click detected
+            Window:ToggleMinimize()
+        end
+        lastClickTime = currentTime
+    end
+end)
+
+-- Update the Window object to include topbar references
+Window.Topbar = Topbar
+Window.MinimizeButton = MinimizeButton
+Window.CloseButton = CloseButton
+Window.Title = Title
+Window.DragArea = DragArea
+
+-- THEME SUPPORT FOR NEW ELEMENTS
+-- Update the SetTheme function to handle new elements (add this to the existing SetTheme function)
+local originalSetTheme = Window.SetTheme
+function Window:SetTheme(newThemeName)
+    -- Call original theme function
+    originalSetTheme(self, newThemeName)
+    
+    -- Update new elements
+    pcall(function()
+        if MinimizeButton and MinimizeButton.Parent then
+            MinimizeButton.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+            MinimizeButton.TextColor3 = theme.Text
+        end
+        
+        if DragArea and DragArea.Parent and not dragging then
+            DragArea.BackgroundTransparency = 1
+        end
+    end)
+end
+
+-- ADDITIONAL KEYBOARD SHORTCUTS
+-- Add to the input connection handler or create new one
+local keyboardConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        -- Alt + F4 to close (hide)
+        if input.KeyCode == Enum.KeyCode.F4 and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt) then
+            Window:Hide()
+        end
+        
+        -- Escape to close (hide)
+        if input.KeyCode == Enum.KeyCode.Escape then
+            Window:Hide()
+        end
+        
+        -- Custom toggle key
+        if input.KeyCode == Window._toggleKey then
+            Window:ToggleUI()
+        end
+    end
+end)
+
+globalConnTracker:add(keyboardConn)
 
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
