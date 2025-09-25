@@ -311,7 +311,7 @@ ScreenGui.Parent = GuiParent
     MainCorner.CornerRadius = UDim.new(0, 8)
     MainCorner.Parent = Main
 
-   -- Topbar
+    -- Topbar
     local Topbar = Instance.new("Frame")
     Topbar.Size = UDim2.new(1, 0, 0, 40)
     Topbar.BackgroundColor3 = theme.SectionBackground
@@ -332,13 +332,19 @@ ScreenGui.Parent = GuiParent
     Title.TextSize = 16
     Title.Parent = Topbar
 
-    local globalConnTracker = makeConnectionTracker() -- global to this window
-
+    local globalConnTracker = makeConnectionTracker()
+    
     -- make draggable and keep its connections
     local dragTracker = makeDraggable(Main, Topbar)
     if dragTracker then
         for _, c in ipairs(dragTracker.list()) do globalConnTracker:add(c) end
     end
+    -- integrate any module-level global connections created earlier
+    for _, c in ipairs(_GLOBAL_CONN_REGISTRY) do
+        globalConnTracker:add(c)
+    end
+    
+    _GLOBAL_CONN_REGISTRY = {}
 
     -- Tab container (left)
     local TabContainer = Instance.new("Frame")
