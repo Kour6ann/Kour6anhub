@@ -1075,113 +1075,221 @@ ScreenGui.Parent = GuiParent
                 }
             end
 
-            function SectionObj:NewSlider(text, min, max, default, callback)
-                if type(min) ~= "number" then min = 0 end
-                if type(max) ~= "number" then max = 100 end
-                if min > max then local t = min; min = max; max = t end
-                if default == nil then default = min end
-                if type(default) ~= "number" then default = tonumber(default) or min end
-                if default < min then default = min end
-                if default > max then default = max end
+           -- FIXED SLIDER FUNCTION  
+function SectionObj:NewSlider(text, min, max, default, callback)
+    if type(min) ~= "number" then min = 0 end
+    if type(max) ~= "number" then max = 100 end
+    if min > max then local t = min; min = max; max = t end
+    if default == nil then default = min end
+    if type(default) ~= "number" then default = tonumber(default) or min end
+    if default < min then default = min end
+    if default > max then default = max end
 
-                local wrap = Instance.new("Frame")
-                wrap.Size = UDim2.new(1, 0, 0, 48)
-                wrap.BackgroundTransparency = 1
-                wrap.Parent = Section
+    local currentValue = default
+    local precision = 0
+    
+    -- Auto-detect precision based on range
+    local range = max - min
+    if range <= 1 then
+        precision = 2
+    elseif range <= 10 then
+        precision = 1
+    else
+        precision = 0
+    end
 
-                local lbl = Instance.new("TextLabel")
-                lbl.Text = text
-                lbl.Size = UDim2.new(1, -8, 0, 18)
-                lbl.Position = UDim2.new(0, 0, 0, 0)
-                lbl.BackgroundTransparency = 1
-                lbl.TextColor3 = theme.SubText
-                lbl.Font = Enum.Font.Gotham
-                lbl.TextSize = 13
-                lbl.TextXAlignment = Enum.TextXAlignment.Left
-                lbl.Parent = wrap
+    local function roundValue(value)
+        local mult = 10 ^ precision
+        return math.floor(value * mult + 0.5) / mult
+    end
 
-                local bar = Instance.new("Frame")
-                bar.Size = UDim2.new(1, -8, 0, 18)
-                bar.Position = UDim2.new(0, 0, 0, 24)
-                bar.BackgroundColor3 = theme.SectionBackground
-                bar.Parent = wrap
+    local wrap = Instance.new("Frame")
+    wrap.Size = UDim2.new(1, 0, 0, 58)
+    wrap.BackgroundTransparency = 1
+    wrap.Parent = Section
 
-                local barCorner = Instance.new("UICorner")
-                barCorner.CornerRadius = UDim.new(0, 8)
-                barCorner.Parent = bar
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = text
+    lbl.Size = UDim2.new(0.7, -8, 0, 18)
+    lbl.Position = UDim2.new(0, 0, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = theme.SubText
+    lbl.Font = Enum.Font.Gotham
+    lbl.TextSize = 13
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = wrap
 
-                local fill = Instance.new("Frame")
-                local initialRel = 0
-                if max > min then
-                    initialRel = (default - min) / (max - min)
-                end
-                fill.Size = UDim2.new(initialRel, 0, 1, 0)
-                fill.BackgroundColor3 = theme.Accent
-                fill.Parent = bar
+    -- Value display label
+    local valueLbl = Instance.new("TextLabel")
+    valueLbl.Text = tostring(roundValue(currentValue))
+    valueLbl.Size = UDim2.new(0.3, -8, 0, 18)
+    valueLbl.Position = UDim2.new(0.7, 0, 0, 0)
+    valueLbl.BackgroundTransparency = 1
+    valueLbl.TextColor3 = theme.Accent
+    valueLbl.Font = Enum.Font.GothamBold
+    valueLbl.TextSize = 13
+    valueLbl.TextXAlignment = Enum.TextXAlignment.Right
+    valueLbl.Parent = wrap
 
-                local fillCorner = Instance.new("UICorner")
-                fillCorner.CornerRadius = UDim.new(0, 8)
-                fillCorner.Parent = fill
+    local sliderBg = Instance.new("Frame")
+    sliderBg.Size = UDim2.new(1, -8, 0, 20)
+    sliderBg.Position = UDim2.new(0, 4, 0, 32)
+    sliderBg.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+    sliderBg.Parent = wrap
 
-                local knob = Instance.new("Frame")
-                knob.Size = UDim2.new(0, 14, 0, 14)
-                knob.Position = UDim2.new(fill.Size.X.Scale, -7, 0.5, -7)
-                knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-                knob.Parent = bar
-                local knobCorner = Instance.new("UICorner")
-                knobCorner.CornerRadius = UDim.new(0, 8)
-                knobCorner.Parent = knob
+    local bgCorner = Instance.new("UICorner")
+    bgCorner.CornerRadius = UDim.new(0, 10)
+    bgCorner.Parent = sliderBg
 
-                local dragging = false
-                local localConnTracker = makeConnectionTracker()
+    local fill = Instance.new("Frame")
+    local initialRel = 0
+    if max > min then
+        initialRel = (currentValue - min) / (max - min)
+    end
+    fill.Size = UDim2.new(initialRel, 0, 1, 0)
+    fill.BackgroundColor3 = theme.Accent
+    fill.Parent = sliderBg
+    fill.ZIndex = 2
 
-                local function updateByX(x)
-                    local rel = 0
-                    if bar.AbsoluteSize.X > 0 then
-                        rel = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-                    end
-                    fill.Size = UDim2.new(rel, 0, 1, 0)
-                    knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                    local val = min + (max - min) * rel
-                    safeCallback(callback, val)
-                end
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(0, 10)
+    fillCorner.Parent = fill
 
-                local beganConn = bar.InputBegan:Connect(function(inp)
-                    if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = true
-                        updateByX(inp.Position.X)
-                    end
-                end)
-                localConnTracker:add(beganConn)
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 16, 0, 16)
+    knob.Position = UDim2.new(initialRel, -8, 0.5, -8)
+    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
+    knob.Parent = sliderBg
+    knob.ZIndex = 3
 
-                local movedConn = UserInputService.InputChanged:Connect(function(inp)
-                    if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                        updateByX(inp.Position.X)
-                    end
-                end)
-                localConnTracker:add(movedConn)
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
 
-                local releasedConn = UserInputService.InputEnded:Connect(function(inp)
-                    if dragging and inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                        dragging = false
-                    end
-                end)
-                localConnTracker:add(releasedConn)
+    -- Add knob shadow/border
+    local knobStroke = Instance.new("UIStroke")
+    knobStroke.Color = theme.Accent
+    knobStroke.Thickness = 2
+    knobStroke.Parent = knob
 
-                return {
-                    Set = function(v)
-                        local rv = math.clamp(v, min, max)
-                        local rel = 0
-                        if max > min then rel = (rv - min) / (max - min) end
-                        fill.Size = UDim2.new(rel, 0, 1, 0)
-                        knob.Position = UDim2.new(rel, -7, 0.5, -7)
-                    end,
-                    Get = function()
-                        local rel = fill.Size.X.Scale
-                        return min + (max - min) * rel
-                    end
-                }
+    local dragging = false
+    local dragStart = nil
+
+    local function updateSlider(inputPos)
+        local relativeX = inputPos.X - sliderBg.AbsolutePosition.X
+        local relativePos = math.clamp(relativeX / sliderBg.AbsoluteSize.X, 0, 1)
+        
+        local newValue = min + (max - min) * relativePos
+        newValue = roundValue(newValue)
+        
+        -- Clamp the value
+        newValue = math.clamp(newValue, min, max)
+        currentValue = newValue
+        
+        -- Update UI
+        local finalRel = (newValue - min) / (max - min)
+        
+        tween(fill, {Size = UDim2.new(finalRel, 0, 1, 0)}, {duration = 0.05})
+        tween(knob, {Position = UDim2.new(finalRel, -8, 0.5, -8)}, {duration = 0.05})
+        
+        valueLbl.Text = tostring(newValue)
+        
+        -- Call callback
+        if callback and type(callback) == "function" then
+            safeCallback(callback, newValue)
+        end
+    end
+
+    -- Mouse/touch interactions
+    local beganConn = sliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            updateSlider(input.Position)
+            
+            -- Visual feedback
+            tween(knob, {Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new((currentValue - min) / (max - min), -10, 0.5, -10)}, {duration = 0.08})
+        end
+    end)
+
+    local changedConn = UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseMovement or
+           input.UserInputType == Enum.UserInputType.Touch then
+            updateSlider(input.Position)
+        end
+    end)
+
+    local endedConn = UserInputService.InputEnded:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                        input.UserInputType == Enum.UserInputType.Touch) then
+            dragging = false
+            
+            -- Reset knob size
+            tween(knob, {Size = UDim2.new(0, 16, 0, 16), Position = UDim2.new((currentValue - min) / (max - min), -8, 0.5, -8)}, {duration = 0.08})
+        end
+    end)
+
+    -- Hover effects
+    local hoverConn1 = sliderBg.MouseEnter:Connect(function()
+        if not dragging then
+            tween(knobStroke, {Thickness = 3}, {duration = 0.1})
+        end
+    end)
+
+    local hoverConn2 = sliderBg.MouseLeave:Connect(function()
+        if not dragging then
+            tween(knobStroke, {Thickness = 2}, {duration = 0.1})
+        end
+    end)
+
+    -- Track connections for cleanup
+    globalConnTracker:add(beganConn)
+    globalConnTracker:add(changedConn) 
+    globalConnTracker:add(endedConn)
+    globalConnTracker:add(hoverConn1)
+    globalConnTracker:add(hoverConn2)
+
+    return {
+        Set = function(value)
+            if type(value) ~= "number" then
+                value = tonumber(value)
+                if not value then return end
             end
+            
+            value = math.clamp(value, min, max)
+            currentValue = roundValue(value)
+            
+            local rel = (currentValue - min) / (max - min)
+            fill.Size = UDim2.new(rel, 0, 1, 0)
+            knob.Position = UDim2.new(rel, -8, 0.5, -8)
+            valueLbl.Text = tostring(currentValue)
+            
+            if callback and type(callback) == "function" then
+                safeCallback(callback, currentValue)
+            end
+        end,
+        Get = function()
+            return currentValue
+        end,
+        SetMin = function(newMin)
+            min = newMin
+            if currentValue < min then
+                currentValue = min
+                valueLbl.Text = tostring(currentValue)
+            end
+        end,
+        SetMax = function(newMax)
+            max = newMax
+            if currentValue > max then
+                currentValue = max
+                valueLbl.Text = tostring(currentValue)
+            end
+        end
+    }
+end
 
             function SectionObj:NewTextbox(placeholder, defaultText, callback)
                 local wrap = Instance.new("Frame")
