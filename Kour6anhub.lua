@@ -1899,263 +1899,537 @@ function SectionObj:NewDropdown(name, options, callback)
 end
 
             -- Colorpicker (non-blocking, integrated with global trackers)
-            function SectionObj:NewColorpicker(name, defaultColor, callback)
-                if not defaultColor then defaultColor = Color3.fromRGB(255,120,0) end
-                if typeof(defaultColor) ~= "Color3" then
-                    if type(defaultColor) == "table" then
-                        local ok, c = pcall(function() return Color3.new(defaultColor[1] or defaultColor.R, defaultColor[2] or defaultColor.G, defaultColor[3] or defaultColor.B) end)
-                        if ok and typeof(c) == "Color3" then defaultColor = c end
+            -- Fixed Colorpicker function for Kour6anHub Library
+function SectionObj:NewColorpicker(name, defaultColor, callback)
+    -- Validate and set default color
+    local cur = Color3.fromRGB(255, 120, 0) -- fallback
+    if defaultColor then
+        if typeof(defaultColor) == "Color3" then
+            cur = defaultColor
+        elseif type(defaultColor) == "table" then
+            local ok, c = pcall(function() 
+                return Color3.new(
+                    defaultColor[1] or defaultColor.R or 1, 
+                    defaultColor[2] or defaultColor.G or 0.5, 
+                    defaultColor[3] or defaultColor.B or 0
+                ) 
+            end)
+            if ok and typeof(c) == "Color3" then 
+                cur = c 
+            end
+        end
+    end
+
+    -- Create main wrapper
+    local wrap = Instance.new("Frame")
+    wrap.Size = UDim2.new(1, 0, 0, 34)
+    wrap.BackgroundTransparency = 1
+    wrap.Parent = Section
+
+    -- Main button
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, -32, 1, 0)
+    btn.Position = UDim2.new(0, 0, 0, 0)
+    btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+    btn.AutoButtonColor = false
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.TextColor3 = theme.Text
+    btn.Text = (name and name .. " : " or "") .. "[Color]"
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = wrap
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+
+    local btnPadding = Instance.new("UIPadding")
+    btnPadding.PaddingLeft = UDim.new(0, 8)
+    btnPadding.Parent = btn
+
+    -- Color preview
+    local preview = Instance.new("Frame")
+    preview.Size = UDim2.new(0, 24, 0, 24)
+    preview.Position = UDim2.new(1, -28, 0.5, -12)
+    preview.BackgroundColor3 = cur
+    preview.BorderSizePixel = 0
+    preview.Parent = wrap
+
+    local previewCorner = Instance.new("UICorner")
+    previewCorner.CornerRadius = UDim.new(0, 6)
+    previewCorner.Parent = preview
+
+    local previewStroke = Instance.new("UIStroke")
+    previewStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
+    previewStroke.Thickness = 1
+    previewStroke.Parent = preview
+
+    -- Popup variables
+    local popup = nil
+    local isOpen = false
+    local sliders = {}
+    local outsideClickConn = nil
+
+    -- Close popup function
+    local function closePopup()
+        if not isOpen or not popup or not popup.Parent then return end
+        
+        isOpen = false
+        
+        -- Disconnect outside click listener
+        if outsideClickConn then
+            pcall(function() outsideClickConn:Disconnect() end)
+            outsideClickConn = nil
+        end
+        
+        -- Animate close
+        local closeTween = tween(popup, {
+            Size = UDim2.new(0, 0, 0, 0),
+            BackgroundTransparency = 1
+        }, {duration = 0.15})
+        
+        -- Fade out contents
+        for _, child in pairs(popup:GetChildren()) do
+            if child:IsA("GuiObject") and child ~= popup:FindFirstChild("UICorner") then
+                tween(child, {BackgroundTransparency = 1}, {duration = 0.1})
+                if child:IsA("TextLabel") then
+                    tween(child, {TextTransparency = 1}, {duration = 0.1})
+                end
+            end
+        end
+        
+        if closeTween then
+            local conn
+            conn = closeTween.Completed:Connect(function()
+                pcall(function() conn:Disconnect() end)
+                if popup and popup.Parent then
+                    popup.Visible = false
+                end
+            end)
+        else
+            task.delay(0.15, function()
+                if popup and popup.Parent then
+                    popup.Visible = false
+                end
+            end)
+        end
+    end
+
+    -- Create color slider
+    local function createSlider(parent, yPos, labelText, component, initialValue)
+        local container = Instance.new("Frame")
+        container.Size = UDim2.new(1, -16, 0, 32)
+        container.Position = UDim2.new(0, 8, 0, yPos)
+        container.BackgroundTransparency = 1
+        container.Parent = parent
+
+        local label = Instance.new("TextLabel")
+        label.Text = labelText .. ": " .. math.floor(initialValue * 255)
+        label.Size = UDim2.new(0.3, 0, 0, 16)
+        label.Position = UDim2.new(0, 0, 0, 0)
+        label.BackgroundTransparency = 1
+        label.TextColor3 = theme.Text
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 12
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.Parent = container
+
+        local track = Instance.new("Frame")
+        track.Size = UDim2.new(0.7, -8, 0, 12)
+        track.Position = UDim2.new(0.3, 4, 0, 2)
+        track.BackgroundColor3 = theme.InputBackground or theme.SectionBackground
+        track.BorderSizePixel = 0
+        track.Parent = container
+
+        local trackCorner = Instance.new("UICorner")
+        trackCorner.CornerRadius = UDim.new(0, 6)
+        trackCorner.Parent = track
+
+        -- Color gradient for the track based on component
+        local gradient = Instance.new("UIGradient")
+        if component == "r" then
+            gradient.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, Color3.new(0, cur.G, cur.B)),
+                ColorSequenceKeypoint.new(1, Color3.new(1, cur.G, cur.B))
+            }
+        elseif component == "g" then
+            gradient.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, Color3.new(cur.R, 0, cur.B)),
+                ColorSequenceKeypoint.new(1, Color3.new(cur.R, 1, cur.B))
+            }
+        else -- "b"
+            gradient.Color = ColorSequence.new{
+                ColorSequenceKeypoint.new(0, Color3.new(cur.R, cur.G, 0)),
+                ColorSequenceKeypoint.new(1, Color3.new(cur.R, cur.G, 1))
+            }
+        end
+        gradient.Parent = track
+
+        local knob = Instance.new("Frame")
+        knob.Size = UDim2.new(0, 16, 0, 16)
+        knob.Position = UDim2.new(initialValue, -8, 0.5, -8)
+        knob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        knob.BorderSizePixel = 0
+        knob.ZIndex = track.ZIndex + 1
+        knob.Parent = container
+
+        local knobCorner = Instance.new("UICorner")
+        knobCorner.CornerRadius = UDim.new(1, 0)
+        knobCorner.Parent = knob
+
+        local knobStroke = Instance.new("UIStroke")
+        knobStroke.Color = theme.Accent
+        knobStroke.Thickness = 2
+        knobStroke.Parent = knob
+
+        local dragging = false
+        local currentValue = initialValue
+
+        local function updateValue(newValue)
+            newValue = math.clamp(newValue, 0, 1)
+            currentValue = newValue
+            
+            -- Update knob position
+            knob.Position = UDim2.new(newValue, -8, 0.5, -8)
+            
+            -- Update label
+            label.Text = labelText .. ": " .. math.floor(newValue * 255)
+            
+            -- Update current color
+            if component == "r" then
+                cur = Color3.new(newValue, cur.G, cur.B)
+            elseif component == "g" then
+                cur = Color3.new(cur.R, newValue, cur.B)
+            else -- "b"
+                cur = Color3.new(cur.R, cur.G, newValue)
+            end
+            
+            -- Update all gradients
+            for _, slider in pairs(sliders) do
+                if slider ~= container and slider.gradient then
+                    if slider.component == "r" then
+                        slider.gradient.Color = ColorSequence.new{
+                            ColorSequenceKeypoint.new(0, Color3.new(0, cur.G, cur.B)),
+                            ColorSequenceKeypoint.new(1, Color3.new(1, cur.G, cur.B))
+                        }
+                    elseif slider.component == "g" then
+                        slider.gradient.Color = ColorSequence.new{
+                            ColorSequenceKeypoint.new(0, Color3.new(cur.R, 0, cur.B)),
+                            ColorSequenceKeypoint.new(1, Color3.new(cur.R, 1, cur.B))
+                        }
+                    else -- "b"
+                        slider.gradient.Color = ColorSequence.new{
+                            ColorSequenceKeypoint.new(0, Color3.new(cur.R, cur.G, 0)),
+                            ColorSequenceKeypoint.new(1, Color3.new(cur.R, cur.G, 1))
+                        }
                     end
                 end
-                local cur = defaultColor
+            end
+            
+            -- Update preview
+            preview.BackgroundColor3 = cur
+            if popup and popup._previewBox then
+                popup._previewBox.BackgroundColor3 = cur
+            end
+            
+            -- Call callback
+            if callback and type(callback) == "function" then
+                safeCallback(callback, cur)
+            end
+        end
 
-                local wrap = Instance.new("Frame")
-                wrap.Size = UDim2.new(1, 0, 0, 34)
-                wrap.BackgroundTransparency = 1
-                wrap.Parent = Section
+        local function getMousePos(input)
+            return input.Position.X - track.AbsolutePosition.X
+        end
 
-                local btn = Instance.new("TextButton")
-                btn.Size = UDim2.new(1, 0, 1, 0)
-                btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
-                btn.AutoButtonColor = false
-                btn.Font = Enum.Font.Gotham
-                btn.TextSize = 13
-                btn.TextColor3 = theme.Text
-                btn.Text = (name and name .. " : " or "") .. "[Color]"
-                btn.Parent = wrap
+        local inputBeganConn = track.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = true
+                local mouseX = getMousePos(input)
+                local relativeX = math.clamp(mouseX / track.AbsoluteSize.X, 0, 1)
+                updateValue(relativeX)
+                
+                -- Visual feedback
+                tween(knob, {Size = UDim2.new(0, 20, 0, 20)}, {duration = 0.1})
+                tween(knobStroke, {Thickness = 3}, {duration = 0.1})
+            end
+        end)
 
-                local preview = Instance.new("Frame")
-                preview.Size = UDim2.new(0, 24, 0, 24)
-                preview.Position = UDim2.new(1, -28, 0.5, -12)
-                preview.BackgroundColor3 = cur
-                preview.Parent = wrap
-                local pc = Instance.new("UICorner")
-                pc.CornerRadius = UDim.new(0, 6)
-                pc.Parent = preview
+        local inputChangedConn = UserInputService.InputChanged:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local mouseX = input.Position.X - track.AbsolutePosition.X
+                local relativeX = math.clamp(mouseX / track.AbsoluteSize.X, 0, 1)
+                updateValue(relativeX)
+            end
+        end)
 
-                local popup = nil
-                local open = false
+        local inputEndedConn = UserInputService.InputEnded:Connect(function(input)
+            if dragging and input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+                
+                -- Reset visual feedback
+                tween(knob, {Size = UDim2.new(0, 16, 0, 16)}, {duration = 0.1})
+                tween(knobStroke, {Thickness = 2}, {duration = 0.1})
+            end
+        end)
 
-                local function closePopup()
-                    if popup and popup.Visible then
-                        local t = tween(popup, {Size = UDim2.new(0, 0, 0, 0)}, {duration = 0.15})
-                        if t then
-                            local c
-                            c = t.Completed:Connect(function()
-                                pcall(function() c:Disconnect() end)
-                                if popup and popup.Parent then
-                                    popup.Visible = false
-                                end
-                            end)
-                        else
-                            if popup and popup.Parent then popup.Visible = false end
+        -- Track connections for cleanup
+        globalConnTracker:add(inputBeganConn)
+        globalConnTracker:add(inputChangedConn)
+        globalConnTracker:add(inputEndedConn)
+
+        -- Store slider data
+        sliders[container] = {
+            component = component,
+            gradient = gradient,
+            updateValue = updateValue,
+            getValue = function() return currentValue end
+        }
+
+        return container
+    end
+
+    -- Main click handler
+    btn.MouseButton1Click:Connect(function()
+        if isOpen then
+            closePopup()
+            return
+        end
+
+        isOpen = true
+        sliders = {}
+
+        -- Create popup if it doesn't exist
+        if not popup or not popup.Parent then
+            popup = Instance.new("Frame")
+            popup.Name = "_ColorpickerPopup"
+            popup.Size = UDim2.new(0, 0, 0, 0)
+            popup.BackgroundColor3 = theme.SectionBackground
+            popup.BorderSizePixel = 0
+            popup.Visible = false
+            popup.ZIndex = 1000
+            popup.Parent = ScreenGui
+
+            local popupCorner = Instance.new("UICorner")
+            popupCorner.CornerRadius = UDim.new(0, 8)
+            popupCorner.Parent = popup
+
+            local popupStroke = Instance.new("UIStroke")
+            popupStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
+            popupStroke.Thickness = 1
+            popupStroke.Transparency = 0.5
+            popupStroke.Parent = popup
+        end
+
+        -- Clear existing content
+        for _, child in pairs(popup:GetChildren()) do
+            if not child:IsA("UICorner") and not child:IsA("UIStroke") then
+                child:Destroy()
+            end
+        end
+        sliders = {}
+
+        -- Position popup
+        local btnPos = btn.AbsolutePosition
+        local btnSize = btn.AbsoluteSize
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+        
+        local popupWidth = 280
+        local popupHeight = 180
+        
+        local x = math.clamp(btnPos.X + btnSize.X + 10, 10, math.max(10, viewport.X - popupWidth - 10))
+        local y = math.clamp(btnPos.Y, 10, math.max(10, viewport.Y - popupHeight - 10))
+        
+        popup.Position = UDim2.new(0, x, 0, y)
+
+        -- Title
+        local title = Instance.new("TextLabel")
+        title.Text = name or "Color Picker"
+        title.Size = UDim2.new(1, -50, 0, 20)
+        title.Position = UDim2.new(0, 8, 0, 8)
+        title.BackgroundTransparency = 1
+        title.TextColor3 = theme.Text
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 14
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.Parent = popup
+
+        -- Preview box
+        local previewBox = Instance.new("Frame")
+        previewBox.Size = UDim2.new(0, 32, 0, 32)
+        previewBox.Position = UDim2.new(1, -40, 0, 8)
+        previewBox.BackgroundColor3 = cur
+        previewBox.BorderSizePixel = 0
+        previewBox.Parent = popup
+
+        local previewBoxCorner = Instance.new("UICorner")
+        previewBoxCorner.CornerRadius = UDim.new(0, 6)
+        previewBoxCorner.Parent = previewBox
+
+        local previewBoxStroke = Instance.new("UIStroke")
+        previewBoxStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
+        previewBoxStroke.Thickness = 1
+        previewBoxStroke.Parent = previewBox
+
+        popup._previewBox = previewBox
+
+        -- Create RGB sliders
+        local r, g, b = cur.R, cur.G, cur.B
+        createSlider(popup, 40, "R", "r", r)
+        createSlider(popup, 80, "G", "g", g)
+        createSlider(popup, 120, "B", "b", b)
+
+        -- Show popup with animation
+        popup.Visible = true
+        popup.BackgroundTransparency = 1
+        title.TextTransparency = 1
+        previewBox.BackgroundTransparency = 1
+        
+        for _, child in pairs(popup:GetChildren()) do
+            if child:IsA("Frame") and child ~= previewBox then
+                for _, subChild in pairs(child:GetChildren()) do
+                    if subChild:IsA("GuiObject") then
+                        subChild.BackgroundTransparency = 1
+                        if subChild:IsA("TextLabel") then
+                            subChild.TextTransparency = 1
                         end
                     end
-                    open = false
                 end
+            end
+        end
 
-                local function createSlider(parent, y, labelText, initial, onChange)
-                    local lbl = Instance.new("TextLabel")
-                    lbl.Text = labelText
-                    lbl.Size = UDim2.new(1, -12, 0, 16)
-                    lbl.Position = UDim2.new(0, 8, 0, y)
-                    lbl.BackgroundTransparency = 1
-                    lbl.TextColor3 = theme.SubText
-                    lbl.Font = Enum.Font.Gotham
-                    lbl.TextSize = 12
-                    lbl.TextXAlignment = Enum.TextXAlignment.Left
-                    lbl.Parent = parent
+        local openTween = tween(popup, {
+            Size = UDim2.new(0, popupWidth, 0, popupHeight),
+            BackgroundTransparency = 0
+        }, {duration = 0.15})
 
-                    local bar = Instance.new("Frame")
-                    bar.Size = UDim2.new(1, -12, 0, 10)
-                    bar.Position = UDim2.new(0, 8, 0, y + 18)
-                    bar.BackgroundColor3 = theme.SectionBackground
-                    bar.Parent = parent
-                    local barCorner = Instance.new("UICorner")
-                    barCorner.CornerRadius = UDim.new(0, 6)
-                    barCorner.Parent = bar
-
-                    local fill = Instance.new("Frame")
-                    local rel = initial or 0
-                    fill.Size = UDim2.new(rel, 0, 1, 0)
-                    fill.BackgroundColor3 = theme.Accent
-                    fill.Parent = bar
-                    local fillCorner = Instance.new("UICorner")
-                    fillCorner.CornerRadius = UDim.new(0, 6)
-                    fillCorner.Parent = fill
-
-                    local knob = Instance.new("Frame")
-                    knob.Size = UDim2.new(0, 10, 0, 10)
-                    knob.Position = UDim2.new(rel, -5, 0.5, -5)
-                    knob.BackgroundColor3 = Color3.fromRGB(255,255,255)
-                    knob.Parent = bar
-                    local knobCorner = Instance.new("UICorner")
-                    knobCorner.CornerRadius = UDim.new(0, 6)
-                    knobCorner.Parent = knob
-
-                    local dragging = false
-
-                    local function updateSlider(x)
-                        local reln = 0
-                        if bar.AbsoluteSize.X > 0 then
-                            reln = math.clamp((x - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-                        end
-                        fill.Size = UDim2.new(reln, 0, 1, 0)
-                        knob.Position = UDim2.new(reln, -5, 0.5, -5)
-                        if onChange then pcall(onChange, reln) end
-                    end
-
-                    local began = bar.InputBegan:Connect(function(inp)
-                        if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                            dragging = true
-                            updateSlider(inp.Position.X)
-                        end
-                    end)
-                    local moved = UserInputService.InputChanged:Connect(function(inp)
-                        if dragging and inp.UserInputType == Enum.UserInputType.MouseMovement then
-                            updateSlider(inp.Position.X)
-                        end
-                    end)
-                    local ended = UserInputService.InputEnded:Connect(function(inp)
-                        if dragging and inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                            dragging = false
-                        end
-                    end)
-
-                    globalConnTracker:add(began)
-                    globalConnTracker:add(moved)
-                    globalConnTracker:add(ended)
-
-                    return {
-                        Set = function(v)
-                            local rv = math.clamp(v, 0, 1)
-                            fill.Size = UDim2.new(rv, 0, 1, 0)
-                            knob.Position = UDim2.new(rv, -5, 0.5, -5)
-                        end,
-                        Get = function() return fill.Size.X.Scale end
-                    }
-                end
-
-                btn.MouseButton1Click:Connect(function()
-                    if open then
-                        closePopup()
-                        return
-                    end
-
-                    open = true
-
-                    if not popup then
-                        popup = Instance.new("Frame")
-                        popup.Size = UDim2.new(0, 260, 0, 160)
-                        popup.BackgroundColor3 = theme.SectionBackground
-                        popup.BorderSizePixel = 0
-                        popup.Visible = false
-                        popup.Parent = ScreenGui
-                        local corner = Instance.new("UICorner", popup)
-                        corner.CornerRadius = UDim.new(0, 8)
-
-                        local title = Instance.new("TextLabel")
-                        title.Text = name or "Color"
-                        title.Size = UDim2.new(1, -12, 0, 18)
-                        title.Position = UDim2.new(0, 8, 0, 6)
-                        title.BackgroundTransparency = 1
-                        title.TextColor3 = theme.SubText
-                        title.Font = Enum.Font.GothamBold
-                        title.TextSize = 13
-                        title.TextXAlignment = Enum.TextXAlignment.Left
-                        title.Parent = popup
-
-                        local previewBox = Instance.new("Frame")
-                        previewBox.Size = UDim2.new(0, 36, 0, 36)
-                        previewBox.Position = UDim2.new(1, -44, 0, 8)
-                        previewBox.BackgroundColor3 = cur
-                        previewBox.Parent = popup
-                        local pc2 = Instance.new("UICorner", previewBox)
-                        pc2.CornerRadius = UDim.new(0, 6)
-
-                        popup._previewBox = previewBox
-                    end
-
-                    -- Position popup (clamped)
-                    local ap = wrap.AbsolutePosition
-                    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800,600)
-                    local x = math.clamp(ap.X + 160, 10, math.max(10, viewport.X - 270))
-                    local y = math.clamp(ap.Y + 20, 10, math.max(10, viewport.Y - 170))
-                    popup.Position = UDim2.new(0, x, 0, y)
-                    popup.Size = UDim2.new(0, 0, 0, 0)
-                    popup.Visible = true
-
-                    local t = tween(popup, {Size = UDim2.new(0, 260, 0, 160)}, {duration = 0.15})
-
-                    local r,g,b = cur
-
-                    local rSlider = createSlider(popup, 34, "R", r, function(rel)
-                        r = rel
-                        cur = Color3.new(r, g, b)
-                        if previewBox then pcall(function() previewBox.BackgroundColor3 = cur end) end
-                        preview.BackgroundColor3 = cur
-                        safeCallback(callback, cur)
-                    end)
-
-                    local gSlider = createSlider(popup, 66, "G", g, function(rel)
-                        g = rel
-                        cur = Color3.new(r, g, b)
-                        if previewBox then pcall(function() previewBox.BackgroundColor3 = cur end) end
-                        preview.BackgroundColor3 = cur
-                        safeCallback(callback, cur)
-                    end)
-
-                    local bSlider = createSlider(popup, 98, "B", b, function(rel)
-                        b = rel
-                        cur = Color3.new(r, g, b)
-                        if previewBox then pcall(function() previewBox.BackgroundColor3 = cur end) end
-                        preview.BackgroundColor3 = cur
-                        safeCallback(callback, cur)
-                    end)
-
-                    rSlider.Set(r)
-                    gSlider.Set(g)
-                    bSlider.Set(b)
-
-                    -- Close on click outside
-                    local conn
-                    conn = UserInputService.InputBegan:Connect(function(input, gp)
-                        if gp then return end
-                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                            local mp = input.Position
-                            if popup and popup.Parent then
-                                local pos = Vector2.new(popup.AbsolutePosition.X, popup.AbsolutePosition.Y)
-                                local size = Vector2.new(popup.AbsoluteSize.X, popup.AbsoluteSize.Y)
-                                if not (mp.X >= pos.X and mp.X <= pos.X + size.X and mp.Y >= pos.Y and mp.Y <= pos.Y + size.Y) then
-                                    pcall(function() conn:Disconnect() end)
-                                    closePopup()
-                                end
-                            else
-                                pcall(function() conn:Disconnect() end)
-                                closePopup()
+        -- Fade in contents
+        task.delay(0.05, function()
+            tween(title, {TextTransparency = 0}, {duration = 0.1})
+            tween(previewBox, {BackgroundTransparency = 0}, {duration = 0.1})
+            
+            for _, child in pairs(popup:GetChildren()) do
+                if child:IsA("Frame") and child ~= previewBox then
+                    for _, subChild in pairs(child:GetChildren()) do
+                        if subChild:IsA("GuiObject") then
+                            tween(subChild, {BackgroundTransparency = 0}, {duration = 0.1})
+                            if subChild:IsA("TextLabel") then
+                                tween(subChild, {TextTransparency = 0}, {duration = 0.1})
                             end
                         end
-                    end)
-                    globalConnTracker:add(conn)
-                end)
-
-                return {
-                    Button = btn,
-                    Get = function() return cur end,
-                    Set = function(c)
-                        if type(c) == "table" then
-                            local ok = pcall(function()
-                                cur = Color3.new(c[1] or c.R, c[2] or c.G, c[3] or c.B)
-                            end)
-                            if not ok then return end
-                        elseif typeof(c) == "Color3" then
-                            cur = c
-                        end
-                        preview.BackgroundColor3 = cur
-                        safeCallback(callback, cur)
                     end
-                }
+                end
             end
+        end)
+
+        -- Enhanced outside click detection
+        task.delay(0.1, function() -- Small delay to prevent immediate closure
+            outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+                if not isOpen then return end
+                
+                if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    local mousePos = input.Position
+                    local popupPos = popup.AbsolutePosition
+                    local popupSize = popup.AbsoluteSize
+                    
+                    -- Check if click is outside popup bounds
+                    if mousePos.X < popupPos.X or mousePos.X > popupPos.X + popupSize.X or
+                       mousePos.Y < popupPos.Y or mousePos.Y > popupPos.Y + popupSize.Y then
+                        closePopup()
+                    end
+                end
+            end)
+            globalConnTracker:add(outsideClickConn)
+        end)
+        
+        -- Tab switching detection - close popup when tab changes
+        local tabSwitchConn
+        if Window and Window._currentTab then
+            tabSwitchConn = Window._currentTab:GetPropertyChangedSignal("BackgroundColor3"):Connect(function()
+                if isOpen then
+                    closePopup()
+                end
+            end)
+            globalConnTracker:add(tabSwitchConn)
+        end
+        
+        -- Also listen for any tab button clicks in the main window
+        if Window and Window.Main then
+            local mainClickConn = Window.Main.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1 and isOpen then
+                    -- Check if click is on a tab button or content area
+                    local target = input.Target or input.Parent
+                    if target and (target.Name:find("Tab") or target.Parent and target.Parent.Name:find("Tab")) then
+                        closePopup()
+                    end
+                end
+            end)
+            globalConnTracker:add(mainClickConn)
+        end
+    end)
+
+    -- Hover effects for main button
+    debouncedHover(btn,
+        function()
+            tween(btn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.1})
+        end,
+        function()
+            tween(btn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.1})
+        end
+    )
+
+    return {
+        Button = btn,
+        Get = function() 
+            return cur 
+        end,
+        Set = function(newColor)
+            if not newColor then return end
+            
+            if typeof(newColor) == "Color3" then
+                cur = newColor
+            elseif type(newColor) == "table" then
+                local ok, c = pcall(function()
+                    return Color3.new(
+                        newColor[1] or newColor.R or cur.R,
+                        newColor[2] or newColor.G or cur.G,
+                        newColor[3] or newColor.B or cur.B
+                    )
+                end)
+                if ok and typeof(c) == "Color3" then
+                    cur = c
+                end
+            else
+                return
+            end
+            
+            preview.BackgroundColor3 = cur
+            if popup and popup._previewBox then
+                popup._previewBox.BackgroundColor3 = cur
+            end
+            
+            -- Update sliders if popup is open
+            if isOpen and sliders then
+                for container, data in pairs(sliders) do
+                    if data.updateValue then
+                        if data.component == "r" then
+                            data.updateValue(cur.R)
+                        elseif data.component == "g" then
+                            data.updateValue(cur.G)
+                        else -- "b"
+                            data.updateValue(cur.B)
+                        end
+                    end
+                end
+            end
+            
+            if callback and type(callback) == "function" then
+                safeCallback(callback, cur)
+            end
+        end,
+        Close = closePopup
+    }
+end
 
             -- Compatibility aliases
             SectionObj.NewColorPicker = SectionObj.NewColorpicker
