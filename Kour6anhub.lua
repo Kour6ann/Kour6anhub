@@ -287,14 +287,17 @@ function Kour6anHub.CreateLib(title, themeName)
     local GuiParent = resolveGuiParent()
 
     -- Create or replace ScreenGui
-    local ScreenGui = GuiParent:FindFirstChild("Kour6anHub")
-    if ScreenGui then
-        pcall(function() ScreenGui:Destroy() end)
-    end
-    ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "Kour6anHub"
-    ScreenGui.DisplayOrder = 999999999
-    ScreenGui.Parent = GuiParent
+    -- Create or replace ScreenGui
+local ScreenGui = GuiParent:FindFirstChild("Kour6anHub")
+if ScreenGui then
+    pcall(function() ScreenGui:Destroy() end)
+end
+ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "Kour6anHub"
+ScreenGui.DisplayOrder = 999999999 -- Very high display order to stay on top
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = GuiParent
     
     -- Main frame
     local Main = Instance.new("Frame")
