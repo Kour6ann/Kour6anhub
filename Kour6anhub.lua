@@ -421,7 +421,71 @@ ScreenGui.Parent = GuiParent
     Title.Parent = Topbar
 
     local globalConnTracker = makeConnectionTracker()
-    
+
+    -- ===== Insert after Title.Parent = Topbar =====
+-- Right-side control buttons: minimize and close (destroy)
+local ControlsFrame = Instance.new("Frame")
+ControlsFrame.Size = UDim2.new(0, 80, 1, 0)
+ControlsFrame.Position = UDim2.new(1, -80, 0, 0)
+ControlsFrame.BackgroundTransparency = 1
+ControlsFrame.Parent = Topbar
+
+local controlsLayout = Instance.new("UIListLayout")
+controlsLayout.FillDirection = Enum.FillDirection.Horizontal
+controlsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+controlsLayout.SortOrder = Enum.SortOrder.LayoutOrder
+controlsLayout.Padding = UDim.new(0, 6)
+controlsLayout.Parent = ControlsFrame
+
+local function makeTopButton(text, tooltip)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 28, 0, 28)
+    b.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+    b.AutoButtonColor = false
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 18
+    b.Text = text
+    b.TextColor3 = theme.Text
+    b.Parent = ControlsFrame
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0,6); corner.Parent = b
+    return b
+end
+
+local MinimizeBtn = makeTopButton("—", "Minimize")
+local CloseBtn    = makeTopButton("✕", "Close")
+
+-- Hook up minimize and close with connection tracking
+local minimizeConn = MinimizeBtn.MouseButton1Click:Connect(function()
+    -- Use Window:ToggleMinimize (will be available right after Window table is constructed)
+    pcall(function() 
+        if Window and type(Window.ToggleMinimize) == "function" then
+            Window:ToggleMinimize()
+        end
+    end)
+end)
+globalConnTracker:add(minimizeConn)
+
+local closeConn = CloseBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        if Window and type(Window.Destroy) == "function" then
+            Window:Destroy()
+        else
+            -- fallback: destroy screen gui directly
+            if ScreenGui then pcall(function() ScreenGui:Destroy() end) end
+        end
+    end)
+end)
+globalConnTracker:add(closeConn)
+
+-- Hover visuals for control buttons
+debouncedHover(MinimizeBtn,
+    function() tween(MinimizeBtn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.08}) end,
+    function() tween(MinimizeBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.08}) end
+)
+debouncedHover(CloseBtn,
+    function() tween(CloseBtn, {BackgroundColor3 = Color3.fromRGB(200,60,60)}, {duration = 0.08}) end,
+    function() tween(CloseBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.08}) end
+)  
     -- make draggable and keep its connections
     local dragTracker = makeDraggable(Main, Topbar)
     if dragTracker then
