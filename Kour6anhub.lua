@@ -1661,28 +1661,36 @@ function SectionObj:NewDropdown(name, options, callback)
     end)
 
     -- Close dropdown when clicking outside
-    local outsideClickConn
-    outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed or not open then return end
+local outsideClickConn
+outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or not open then return end
+    
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local mouse = UserInputService:GetMouseLocation()
+        local wrapPos = wrap.AbsolutePosition
+        local wrapSize = wrap.AbsoluteSize
         
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mouse = UserInputService:GetMouseLocation()
-            local wrapPos = wrap.AbsolutePosition
-            local wrapSize = wrap.AbsoluteSize
-            
-            if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
-               mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
-                closeOptions()
-            end
+        if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
+           mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
+            closeOptions()
         end
-    end)
+    end
+end)
 
-    -- Cleanup connection when wrap is destroyed
-    wrap.AncestryChanged:Connect(function()
-        if not wrap.Parent then
-            pcall(function() outsideClickConn:Disconnect() end)
-        end
-    end)
+-- Track connection for proper cleanup
+globalConnTracker:add(outsideClickConn)
+
+-- Cleanup connection when wrap is destroyed
+local ancestryConn
+ancestryConn = wrap.AncestryChanged:Connect(function()
+    if not wrap.Parent then
+        pcall(function() 
+            outsideClickConn:Disconnect()
+            ancestryConn:Disconnect()
+        end)
+    end
+end)
+globalConnTracker:add(ancestryConn)
 
     return {
         Set = function(value)
