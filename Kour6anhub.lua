@@ -279,7 +279,7 @@ local Themes = {
         SubText = Color3.fromRGB(150,150,170),
         Accent = Color3.fromRGB(120,90,255)
     },
-    ["Blood"] = {
+    ["BloodTheme"] = {
         Background = Color3.fromRGB(18,6,8),
         TabBackground = Color3.fromRGB(30,10,12),
         SectionBackground = Color3.fromRGB(40,14,16),
@@ -287,7 +287,7 @@ local Themes = {
         SubText = Color3.fromRGB(200,140,140),
         Accent = Color3.fromRGB(220,20,30)
     },
-    ["Synapse"] = {
+    ["SynapseTheme"] = {
         Background = Color3.fromRGB(12,10,20),
         TabBackground = Color3.fromRGB(22,18,36),
         SectionBackground = Color3.fromRGB(30,26,46),
@@ -295,7 +295,7 @@ local Themes = {
         SubText = Color3.fromRGB(170,160,190),
         Accent = Color3.fromRGB(100,160,255)
     },
-    ["Sentinel"] = {
+    ["SentinelTheme"] = {
         Background = Color3.fromRGB(8,18,12),
         TabBackground = Color3.fromRGB(14,28,20),
         SectionBackground = Color3.fromRGB(20,40,28),
@@ -303,7 +303,7 @@ local Themes = {
         SubText = Color3.fromRGB(160,200,170),
         Accent = Color3.fromRGB(70,200,120)
     },
-    ["Neon"] = {
+    ["NeonTheme"] = {
         Background = Color3.fromRGB(15, 15, 25),
         TabBackground = Color3.fromRGB(25, 25, 40),
         SectionBackground = Color3.fromRGB(35, 35, 55),
@@ -311,7 +311,7 @@ local Themes = {
         SubText = Color3.fromRGB(160, 160, 200),
         Accent = Color3.fromRGB(0, 255, 200)
     },
-    ["Ocean"] = {
+    ["OceanTheme"] = {
         Background = Color3.fromRGB(5, 20, 35),
         TabBackground = Color3.fromRGB(10, 30, 50),
         SectionBackground = Color3.fromRGB(15, 40, 65),
@@ -319,7 +319,7 @@ local Themes = {
         SubText = Color3.fromRGB(140, 170, 190),
         Accent = Color3.fromRGB(0, 140, 255)
     },
-    ["Forest"] = {
+    ["ForestTheme"] = {
         Background = Color3.fromRGB(10, 20, 12),
         TabBackground = Color3.fromRGB(16, 30, 18),
         SectionBackground = Color3.fromRGB(24, 40, 26),
@@ -327,7 +327,7 @@ local Themes = {
         SubText = Color3.fromRGB(160, 180, 160),
         Accent = Color3.fromRGB(70, 200, 100)
     },
-    ["Crimson"] = {
+    ["CrimsonTheme"] = {
         Background = Color3.fromRGB(25, 10, 15),
         TabBackground = Color3.fromRGB(35, 15, 20),
         SectionBackground = Color3.fromRGB(45, 20, 25),
@@ -335,7 +335,7 @@ local Themes = {
         SubText = Color3.fromRGB(180, 150, 160),
         Accent = Color3.fromRGB(220, 40, 80)
     },
-    ["Sky"] = {
+    ["SkyTheme"] = {
         Background = Color3.fromRGB(230, 245, 255),
         TabBackground = Color3.fromRGB(210, 235, 250),
         SectionBackground = Color3.fromRGB(190, 220, 245),
