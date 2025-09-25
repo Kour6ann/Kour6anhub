@@ -57,7 +57,7 @@ local function safeCall(fn, ...)
     return ok, res
 end
 
--- Add this helper function at top of file (after line 50):
+-- Add this helper function at top of file
 local function getArrowChar(direction)
     local unicode = direction == "down" and "▼" or "▲"
     local fallback = direction == "down" and "v" or "^"
