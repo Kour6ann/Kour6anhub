@@ -433,6 +433,7 @@ MinimizeBtn.Font = Enum.Font.GothamBold
 MinimizeBtn.TextSize = 16
 MinimizeBtn.Text = "−"
 MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.Active = true 
 MinimizeBtn.Parent = Topbar
 
 local MinimizeBtnCorner = Instance.new("UICorner")
@@ -449,6 +450,7 @@ CloseBtn.Font = Enum.Font.GothamBold
 CloseBtn.TextSize = 16
 CloseBtn.Text = "×"
 CloseBtn.AutoButtonColor = false
+CloseBtn.Active = true -- Make sure it's active
 CloseBtn.Parent = Topbar
 
 local CloseBtnCorner = Instance.new("UICorner")
