@@ -1990,31 +1990,15 @@ end
 -- Fixed Colorpicker implementation for Kour6anHub
 -- This replaces the existing NewColorpicker function in SectionObj
 
-function SectionObj:NewColorpicker(name, defaultColor, callback)
+ffunction SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
-    local isOpen = false
+    local currentH, currentS, currentV = Color3.toHSV(currentColor)
     local connections = {}
     
-    -- Convert RGB to HSV
-    local function RGBtoHSV(color)
-        return Color3.toHSV(color)
-    end
-    
-    -- Convert HSV to RGB
-    local function HSVtoRGB(h, s, v)
-        return Color3.fromHSV(h, s, v)
-    end
-
-    -- Helper function to clamp values
-    local function clamp(value, min, max)
-        return math.max(min, math.min(max, value))
-    end
-
     -- Main container
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, 34)
     container.BackgroundTransparency = 1
-    container.ClipsDescendants = false -- Changed to false to allow popup to show
     container.Parent = Section
 
     -- Main button
@@ -2025,7 +2009,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     button.Font = Enum.Font.Gotham
     button.TextSize = 13
     button.TextColor3 = theme.Text
-    button.Text = (name and name .. "" or "") .. "Color Picker"
+    button.Text = (name and name .. " " or "") .. "Color Picker"
     button.TextXAlignment = Enum.TextXAlignment.Left
     button.Parent = container
 
@@ -2050,604 +2034,377 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     previewCorner.CornerRadius = UDim.new(0, 6)
     previewCorner.Parent = preview
 
-    local previewStroke = Instance.new("UIStroke")
-    previewStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
-    previewStroke.Thickness = 1
-    previewStroke.Transparency = 0.3
-    previewStroke.Parent = preview
+    -- Create dialog function
+    local function createColorDialog()
+        -- Create dialog overlay
+        local dialogOverlay = Instance.new("Frame")
+        dialogOverlay.Name = "ColorPickerDialog"
+        dialogOverlay.Size = UDim2.new(1, 0, 1, 0)
+        dialogOverlay.Position = UDim2.new(0, 0, 0, 0)
+        dialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+        dialogOverlay.BackgroundTransparency = 0.5
+        dialogOverlay.ZIndex = 10000
+        dialogOverlay.Parent = Window.ScreenGui
 
-    -- Popup frame (positioned to appear above other elements)
-    local popup = Instance.new("Frame")
-    popup.Name = "_ColorPickerPopup"
-    popup.Size = UDim2.new(0, 320, 0, 280)
-    popup.Position = UDim2.new(0, 0, 0, -285) -- Position above the button
-    popup.BackgroundColor3 = theme.SectionBackground
-    popup.BorderSizePixel = 0
-    popup.Visible = false
-    popup.ZIndex = 1000 -- Very high z-index to appear above everything
-    popup.ClipsDescendants = true
-    popup.Parent = container
+        -- Dialog frame
+        local dialog = Instance.new("Frame")
+        dialog.Size = UDim2.new(0, 430, 0, 330)
+        dialog.Position = UDim2.new(0.5, -215, 0.5, -165)
+        dialog.BackgroundColor3 = theme.SectionBackground
+        dialog.ZIndex = 10001
+        dialog.Parent = dialogOverlay
 
-    local popupCorner = Instance.new("UICorner")
-    popupCorner.CornerRadius = UDim.new(0, 8)
-    popupCorner.Parent = popup
+        local dialogCorner = Instance.new("UICorner")
+        dialogCorner.CornerRadius = UDim.new(0, 8)
+        dialogCorner.Parent = dialog
 
-    local popupStroke = Instance.new("UIStroke")
-    popupStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
-    popupStroke.Thickness = 1
-    popupStroke.Transparency = 0.3
-    popupStroke.Parent = popup
+        -- Dialog title
+        local title = Instance.new("TextLabel")
+        title.Text = name or "Color Picker"
+        title.Size = UDim2.new(1, -16, 0, 30)
+        title.Position = UDim2.new(0, 8, 0, 8)
+        title.BackgroundTransparency = 1
+        title.TextColor3 = theme.Text
+        title.Font = Enum.Font.GothamBold
+        title.TextSize = 16
+        title.TextXAlignment = Enum.TextXAlignment.Left
+        title.ZIndex = 10002
+        title.Parent = dialog
 
-    -- Header
-    local header = Instance.new("TextLabel")
-    header.Size = UDim2.new(1, -16, 0, 30)
-    header.Position = UDim2.new(0, 8, 0, 8)
-    header.BackgroundTransparency = 1
-    header.Text = name or "Color Picker"
-    header.TextColor3 = theme.Text
-    header.TextXAlignment = Enum.TextXAlignment.Left
-    header.Font = Enum.Font.GothamBold
-    header.TextSize = 14
-    header.Parent = popup
+        -- Working variables
+        local workingH, workingS, workingV = currentH, currentS, currentV
 
-    -- Saturation-Value Map
-    local satVibMap = Instance.new("ImageLabel")
-    satVibMap.Size = UDim2.new(0, 180, 0, 140)
-    satVibMap.Position = UDim2.new(0, 10, 0, 45)
-    satVibMap.Image = "rbxassetid://4155801252" -- White to transparent gradient overlay
-    satVibMap.BackgroundColor3 = currentColor
-    satVibMap.BorderSizePixel = 0
-    satVibMap.ZIndex = 1001
-    satVibMap.Parent = popup
+        -- Saturation-Value map
+        local satVibMap = Instance.new("ImageLabel")
+        satVibMap.Size = UDim2.new(0, 180, 0, 160)
+        satVibMap.Position = UDim2.new(0, 20, 0, 55)
+        satVibMap.Image = "rbxassetid://4155801252"
+        satVibMap.BackgroundColor3 = Color3.fromHSV(workingH, 1, 1)
+        satVibMap.ZIndex = 10002
+        satVibMap.Parent = dialog
 
-    local mapCorner = Instance.new("UICorner")
-    mapCorner.CornerRadius = UDim.new(0, 6)
-    mapCorner.Parent = satVibMap
+        local mapCorner = Instance.new("UICorner")
+        mapCorner.CornerRadius = UDim.new(0, 4)
+        mapCorner.Parent = satVibMap
 
-    -- Saturation-Value cursor
-    local satVibCursor = Instance.new("Frame")
-    satVibCursor.Size = UDim2.new(0, 12, 0, 12)
-    satVibCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    satVibCursor.BorderSizePixel = 0
-    satVibCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-    satVibCursor.ZIndex = 1002
-    satVibCursor.Parent = satVibMap
+        -- Saturation-Value cursor
+        local satVibCursor = Instance.new("ImageLabel")
+        satVibCursor.Size = UDim2.new(0, 18, 0, 18)
+        satVibCursor.Position = UDim2.new(workingS, -9, 1 - workingV, -9)
+        satVibCursor.Image = "rbxassetid://4805639000"
+        satVibCursor.BackgroundTransparency = 1
+        satVibCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+        satVibCursor.ZIndex = 10003
+        satVibCursor.Parent = satVibMap
 
-    local cursorCorner = Instance.new("UICorner")
-    cursorCorner.CornerRadius = UDim.new(1, 0)
-    cursorCorner.Parent = satVibCursor
+        -- Hue slider
+        local hueSlider = Instance.new("Frame")
+        hueSlider.Size = UDim2.new(0, 12, 0, 190)
+        hueSlider.Position = UDim2.new(0, 210, 0, 55)
+        hueSlider.ZIndex = 10002
+        hueSlider.Parent = dialog
 
-    local cursorStroke = Instance.new("UIStroke")
-    cursorStroke.Color = Color3.fromRGB(0, 0, 0)
-    cursorStroke.Thickness = 2
-    cursorStroke.Parent = satVibCursor
+        local hueCorner = Instance.new("UICorner")
+        hueCorner.CornerRadius = UDim.new(1, 0)
+        hueCorner.Parent = hueSlider
 
-    -- Hue slider background
-    local hueSliderBg = Instance.new("Frame")
-    hueSliderBg.Size = UDim2.new(0, 16, 0, 140)
-    hueSliderBg.Position = UDim2.new(0, 200, 0, 45)
-    hueSliderBg.BorderSizePixel = 0
-    hueSliderBg.ZIndex = 1001
-    hueSliderBg.Parent = popup
+        -- Hue gradient
+        local hueGradient = Instance.new("UIGradient")
+        hueGradient.Rotation = 90
+        local sequenceTable = {}
+        for i = 0, 1, 0.1 do
+            table.insert(sequenceTable, ColorSequenceKeypoint.new(i, Color3.fromHSV(i, 1, 1)))
+        end
+        hueGradient.Color = ColorSequence.new(sequenceTable)
+        hueGradient.Parent = hueSlider
 
-    local hueCorner = Instance.new("UICorner")
-    hueCorner.CornerRadius = UDim.new(0, 8)
-    hueCorner.Parent = hueSliderBg
+        -- Hue cursor
+        local hueCursor = Instance.new("ImageLabel")
+        hueCursor.Size = UDim2.new(0, 14, 0, 14)
+        hueCursor.Position = UDim2.new(0, -1, workingH, -7)
+        hueCursor.Image = "rbxassetid://12266946128"
+        hueCursor.ImageColor3 = theme.InputBackground or Color3.fromRGB(255, 255, 255)
+        hueCursor.BackgroundTransparency = 1
+        hueCursor.ZIndex = 10003
+        hueCursor.Parent = hueSlider
 
-    -- Create hue gradient
-    local hueGradient = Instance.new("UIGradient")
-    hueGradient.Rotation = 90
-    
-    -- Create color sequence for hue slider
-    local colorSequence = {}
-    for i = 0, 6 do
-        local hue = i / 6
-        table.insert(colorSequence, ColorSequenceKeypoint.new(hue, Color3.fromHSV(hue, 1, 1)))
-    end
-    hueGradient.Color = ColorSequence.new(colorSequence)
-    hueGradient.Parent = hueSliderBg
+        -- Color displays
+        local oldColorDisplay = Instance.new("ImageLabel")
+        oldColorDisplay.Size = UDim2.new(0, 88, 0, 24)
+        oldColorDisplay.Position = UDim2.new(0, 112, 0, 220)
+        oldColorDisplay.Image = "rbxassetid://14204231522"
+        oldColorDisplay.ImageTransparency = 0.45
+        oldColorDisplay.ScaleType = Enum.ScaleType.Tile
+        oldColorDisplay.TileSize = UDim2.new(0, 40, 0, 40)
+        oldColorDisplay.ZIndex = 10002
+        oldColorDisplay.Parent = dialog
 
-    -- Hue slider cursor
-    local hueCursor = Instance.new("Frame")
-    hueCursor.Size = UDim2.new(0, 20, 0, 8)
-    hueCursor.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    hueCursor.BorderSizePixel = 0
-    hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
-    hueCursor.ZIndex = 1002
-    hueCursor.Parent = hueSliderBg
+        local oldColorFrame = Instance.new("Frame")
+        oldColorFrame.Size = UDim2.new(1, 0, 1, 0)
+        oldColorFrame.BackgroundColor3 = currentColor
+        oldColorFrame.ZIndex = 10003
+        oldColorFrame.Parent = oldColorDisplay
 
-    local hueCursorCorner = Instance.new("UICorner")
-    hueCursorCorner.CornerRadius = UDim.new(0, 4)
-    hueCursorCorner.Parent = hueCursor
+        local oldCorner = Instance.new("UICorner")
+        oldCorner.CornerRadius = UDim.new(0, 4)
+        oldCorner.Parent = oldColorDisplay
 
-    local hueCursorStroke = Instance.new("UIStroke")
-    hueCursorStroke.Color = Color3.fromRGB(0, 0, 0)
-    hueCursorStroke.Thickness = 1
-    hueCursorStroke.Parent = hueCursor
+        local oldFrameCorner = Instance.new("UICorner")
+        oldFrameCorner.CornerRadius = UDim.new(0, 4)
+        oldFrameCorner.Parent = oldColorFrame
 
-    -- Current color display
-    local newColorDisplay = Instance.new("Frame")
-    newColorDisplay.Size = UDim2.new(0, 60, 0, 40)
-    newColorDisplay.Position = UDim2.new(0, 240, 0, 45)
-    newColorDisplay.BackgroundColor3 = currentColor
-    newColorDisplay.BorderSizePixel = 0
-    newColorDisplay.ZIndex = 1001
-    newColorDisplay.Parent = popup
+        local newColorDisplay = Instance.new("ImageLabel")
+        newColorDisplay.Size = UDim2.new(0, 88, 0, 24)
+        newColorDisplay.Position = UDim2.new(0, 20, 0, 220)
+        newColorDisplay.Image = "rbxassetid://14204231522"
+        newColorDisplay.ImageTransparency = 0.45
+        newColorDisplay.ScaleType = Enum.ScaleType.Tile
+        newColorDisplay.TileSize = UDim2.new(0, 40, 0, 40)
+        newColorDisplay.ZIndex = 10002
+        newColorDisplay.Parent = dialog
 
-    local newColorCorner = Instance.new("UICorner")
-    newColorCorner.CornerRadius = UDim.new(0, 6)
-    newColorCorner.Parent = newColorDisplay
+        local newColorFrame = Instance.new("Frame")
+        newColorFrame.Size = UDim2.new(1, 0, 1, 0)
+        newColorFrame.BackgroundColor3 = Color3.fromHSV(workingH, workingS, workingV)
+        newColorFrame.ZIndex = 10003
+        newColorFrame.Parent = newColorDisplay
 
-    local newColorStroke = Instance.new("UIStroke")
-    newColorStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
-    newColorStroke.Thickness = 1
-    newColorStroke.Transparency = 0.3
-    newColorStroke.Parent = newColorDisplay
+        local newCorner = Instance.new("UICorner")
+        newCorner.CornerRadius = UDim.new(0, 4)
+        newCorner.Parent = newColorDisplay
 
-    -- RGB inputs
-    local rgbInputs = {}
-    local rgbLabels = {"R", "G", "B"}
-    
-    for i = 1, 3 do
-        local yPos = 95 + (i - 1) * 35
-        
-        -- Label
-        local label = Instance.new("TextLabel")
-        label.Text = rgbLabels[i] .. ":"
-        label.Size = UDim2.new(0, 20, 0, 25)
-        label.Position = UDim2.new(0, 240, 0, yPos)
-        label.BackgroundTransparency = 1
-        label.TextColor3 = theme.Text
-        label.Font = Enum.Font.Gotham
-        label.TextSize = 12
-        label.TextXAlignment = Enum.TextXAlignment.Left
-        label.ZIndex = 1001
-        label.Parent = popup
-        
-        -- Input
-        local input = Instance.new("TextBox")
-        input.Size = UDim2.new(0, 50, 0, 25)
-        input.Position = UDim2.new(0, 265, 0, yPos)
-        input.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
-        input.TextColor3 = theme.Text
-        input.Font = Enum.Font.Gotham
-        input.TextSize = 11
-        input.Text = tostring(math.floor(({currentColor.r, currentColor.g, currentColor.b})[i] * 255))
-        input.ClearTextOnFocus = false
-        input.ZIndex = 1001
-        input.Parent = popup
-        
-        local inputCorner = Instance.new("UICorner")
-        inputCorner.CornerRadius = UDim.new(0, 4)
-        inputCorner.Parent = input
-        
-        local inputPadding = Instance.new("UIPadding")
-        inputPadding.PaddingLeft = UDim.new(0, 6)
-        inputPadding.PaddingRight = UDim.new(0, 6)
-        inputPadding.Parent = input
-        
-        rgbInputs[i] = input
-    end
+        local newFrameCorner = Instance.new("UICorner")
+        newFrameCorner.CornerRadius = UDim.new(0, 4)
+        newFrameCorner.Parent = newColorFrame
 
-    -- Hex input
-    local hexLabel = Instance.new("TextLabel")
-    hexLabel.Text = "Hex:"
-    hexLabel.Size = UDim2.new(0, 30, 0, 25)
-    hexLabel.Position = UDim2.new(0, 240, 0, 200)
-    hexLabel.BackgroundTransparency = 1
-    hexLabel.TextColor3 = theme.Text
-    hexLabel.Font = Enum.Font.Gotham
-    hexLabel.TextSize = 12
-    hexLabel.TextXAlignment = Enum.TextXAlignment.Left
-    hexLabel.ZIndex = 1001
-    hexLabel.Parent = popup
+        -- Input creation helper
+        local function createInput(pos, labelText, defaultValue)
+            local inputFrame = Instance.new("Frame")
+            inputFrame.Size = UDim2.new(0, 90, 0, 32)
+            inputFrame.Position = pos
+            inputFrame.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
+            inputFrame.ZIndex = 10002
+            inputFrame.Parent = dialog
 
-    local hexInput = Instance.new("TextBox")
-    hexInput.Size = UDim2.new(0, 75, 0, 25)
-    hexInput.Position = UDim2.new(0, 240, 0, 225)
-    hexInput.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
-    hexInput.TextColor3 = theme.Text
-    hexInput.Font = Enum.Font.Gotham
-    hexInput.TextSize = 11
-    hexInput.Text = currentColor:ToHex()
-    hexInput.ClearTextOnFocus = false
-    hexInput.ZIndex = 1001
-    hexInput.Parent = popup
+            local inputCorner = Instance.new("UICorner")
+            inputCorner.CornerRadius = UDim.new(0, 4)
+            inputCorner.Parent = inputFrame
 
-    local hexCorner = Instance.new("UICorner")
-    hexCorner.CornerRadius = UDim.new(0, 4)
-    hexCorner.Parent = hexInput
+            local input = Instance.new("TextBox")
+            input.Size = UDim2.new(1, -12, 1, 0)
+            input.Position = UDim2.new(0, 6, 0, 0)
+            input.BackgroundTransparency = 1
+            input.TextColor3 = theme.Text
+            input.Font = Enum.Font.Gotham
+            input.TextSize = 12
+            input.Text = defaultValue
+            input.ClearTextOnFocus = false
+            input.ZIndex = 10003
+            input.Parent = inputFrame
 
-    local hexPadding = Instance.new("UIPadding")
-    hexPadding.PaddingLeft = UDim.new(0, 6)
-    hexPadding.PaddingRight = UDim.new(0, 6)
-    hexPadding.Parent = hexInput
+            local label = Instance.new("TextLabel")
+            label.Text = labelText
+            label.Size = UDim2.new(1, 0, 0, 32)
+            label.Position = UDim2.new(1, 10, 0, 0)
+            label.BackgroundTransparency = 1
+            label.TextColor3 = theme.Text
+            label.Font = Enum.Font.Gotham
+            label.TextSize = 13
+            label.TextXAlignment = Enum.TextXAlignment.Left
+            label.ZIndex = 10002
+            label.Parent = dialog
 
-    -- Control buttons
-    local buttonContainer = Instance.new("Frame")
-    buttonContainer.Size = UDim2.new(0, 160, 0, 30)
-    buttonContainer.Position = UDim2.new(0, 10, 0, 240)
-    buttonContainer.BackgroundTransparency = 1
-    buttonContainer.ZIndex = 1001
-    buttonContainer.Parent = popup
+            return input
+        end
 
-    local buttonLayout = Instance.new("UIListLayout")
-    buttonLayout.FillDirection = Enum.FillDirection.Horizontal
-    buttonLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    buttonLayout.Padding = UDim.new(0, 8)
-    buttonLayout.Parent = buttonContainer
+        -- Create inputs
+        local hexInput = createInput(UDim2.new(0, 240, 0, 55), "Hex", "#" .. Color3.fromHSV(workingH, workingS, workingV):ToHex())
+        local redInput = createInput(UDim2.new(0, 240, 0, 95), "Red", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).r * 255)))
+        local greenInput = createInput(UDim2.new(0, 240, 0, 135), "Green", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).g * 255)))
+        local blueInput = createInput(UDim2.new(0, 240, 0, 175), "Blue", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).b * 255)))
 
-    local cancelBtn = Instance.new("TextButton")
-    cancelBtn.Size = UDim2.new(0, 76, 1, 0)
-    cancelBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
-    cancelBtn.TextColor3 = theme.Text
-    cancelBtn.Font = Enum.Font.Gotham
-    cancelBtn.TextSize = 12
-    cancelBtn.Text = "Cancel"
-    cancelBtn.AutoButtonColor = false
-    cancelBtn.ZIndex = 1001
-    cancelBtn.Parent = buttonContainer
+        -- Update display function
+        local function updateDisplay()
+            local newColor = Color3.fromHSV(workingH, workingS, workingV)
+            
+            satVibMap.BackgroundColor3 = Color3.fromHSV(workingH, 1, 1)
+            satVibCursor.Position = UDim2.new(workingS, -9, 1 - workingV, -9)
+            hueCursor.Position = UDim2.new(0, -1, workingH, -7)
+            newColorFrame.BackgroundColor3 = newColor
+            
+            hexInput.Text = "#" .. newColor:ToHex()
+            redInput.Text = tostring(math.floor(newColor.r * 255))
+            greenInput.Text = tostring(math.floor(newColor.g * 255))
+            blueInput.Text = tostring(math.floor(newColor.b * 255))
+        end
 
-    local cancelCorner = Instance.new("UICorner")
-    cancelCorner.CornerRadius = UDim.new(0, 4)
-    cancelCorner.Parent = cancelBtn
+        -- Mouse interactions
+        local satVibDragging = false
+        local hueDragging = false
 
-    local confirmBtn = Instance.new("TextButton")
-    confirmBtn.Size = UDim2.new(0, 76, 1, 0)
-    confirmBtn.BackgroundColor3 = theme.Accent
-    confirmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    confirmBtn.Font = Enum.Font.Gotham
-    confirmBtn.TextSize = 12
-    confirmBtn.Text = "Confirm"
-    confirmBtn.AutoButtonColor = false
-    confirmBtn.ZIndex = 1001
-    confirmBtn.Parent = buttonContainer
+        local satVibConn = satVibMap.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                satVibDragging = true
+            end
+        end)
 
-    local confirmCorner = Instance.new("UICorner")
-    confirmCorner.CornerRadius = UDim.new(0, 4)
-    confirmCorner.Parent = confirmBtn
+        local satVibMoveConn = UserInputService.InputChanged:Connect(function(input)
+            if satVibDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local mouse = UserInputService:GetMouseLocation()
+                local mapPos = satVibMap.AbsolutePosition
+                local mapSize = satVibMap.AbsoluteSize
+                
+                local relX = math.clamp((mouse.X - mapPos.X) / mapSize.X, 0, 1)
+                local relY = math.clamp((mouse.Y - mapPos.Y) / mapSize.Y, 0, 1)
+                
+                workingS = relX
+                workingV = 1 - relY
+                updateDisplay()
+            end
+        end)
 
-    -- Current HSV values
-    local currentH, currentS, currentV = RGBtoHSV(currentColor)
+        local satVibEndConn = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                satVibDragging = false
+            end
+        end)
 
-    -- Update all displays
-    local function updateDisplays()
-        preview.BackgroundColor3 = currentColor
-        newColorDisplay.BackgroundColor3 = currentColor
-        satVibMap.BackgroundColor3 = HSVtoRGB(currentH, 1, 1)
-        
-        -- Update cursor positions
-        satVibCursor.Position = UDim2.new(currentS, 0, 1 - currentV, 0)
-        hueCursor.Position = UDim2.new(0.5, 0, currentH, 0)
-        
-        -- Update RGB inputs
-        local r, g, b = math.floor(currentColor.r * 255), math.floor(currentColor.g * 255), math.floor(currentColor.b * 255)
-        rgbInputs[1].Text = tostring(r)
-        rgbInputs[2].Text = tostring(g)
-        rgbInputs[3].Text = tostring(b)
-        
-        -- Update hex
-        hexInput.Text = currentColor:ToHex()
-    end
+        local hueConn = hueSlider.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                hueDragging = true
+            end
+        end)
 
-    -- Update color from HSV
-    local function updateColorFromHSV()
-        currentColor = HSVtoRGB(currentH, currentS, currentV)
-        updateDisplays()
-    end
+        local hueMoveConn = UserInputService.InputChanged:Connect(function(input)
+            if hueDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+                local mouse = UserInputService:GetMouseLocation()
+                local sliderPos = hueSlider.AbsolutePosition
+                local sliderSize = hueSlider.AbsoluteSize
+                
+                local relY = math.clamp((mouse.Y - sliderPos.Y) / sliderSize.Y, 0, 1)
+                workingH = relY
+                updateDisplay()
+            end
+        end)
 
-    -- Update color from RGB
-    local function updateColorFromRGB()
-        local r = tonumber(rgbInputs[1].Text) or 0
-        local g = tonumber(rgbInputs[2].Text) or 0
-        local b = tonumber(rgbInputs[3].Text) or 0
-        
-        r = clamp(r, 0, 255) / 255
-        g = clamp(g, 0, 255) / 255
-        b = clamp(b, 0, 255) / 255
-        
-        currentColor = Color3.new(r, g, b)
-        currentH, currentS, currentV = RGBtoHSV(currentColor)
-        updateDisplays()
-    end
+        local hueEndConn = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                hueDragging = false
+            end
+        end)
 
-    -- Update color from hex
-    local function updateColorFromHex()
-        local hex = hexInput.Text:gsub("#", "")
-        if #hex == 6 then
-            local success, color = pcall(function()
-                return Color3.fromHex("#" .. hex)
+        -- Buttons
+        local buttonContainer = Instance.new("Frame")
+        buttonContainer.Size = UDim2.new(0, 200, 0, 32)
+        buttonContainer.Position = UDim2.new(0, 20, 0, 280)
+        buttonContainer.BackgroundTransparency = 1
+        buttonContainer.ZIndex = 10002
+        buttonContainer.Parent = dialog
+
+        local buttonLayout = Instance.new("UIListLayout")
+        buttonLayout.FillDirection = Enum.FillDirection.Horizontal
+        buttonLayout.Padding = UDim.new(0, 8)
+        buttonLayout.Parent = buttonContainer
+
+        local cancelBtn = Instance.new("TextButton")
+        cancelBtn.Size = UDim2.new(0, 96, 1, 0)
+        cancelBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+        cancelBtn.TextColor3 = theme.Text
+        cancelBtn.Font = Enum.Font.Gotham
+        cancelBtn.TextSize = 14
+        cancelBtn.Text = "Cancel"
+        cancelBtn.ZIndex = 10003
+        cancelBtn.Parent = buttonContainer
+
+        local cancelCorner = Instance.new("UICorner")
+        cancelCorner.CornerRadius = UDim.new(0, 4)
+        cancelCorner.Parent = cancelBtn
+
+        local doneBtn = Instance.new("TextButton")
+        doneBtn.Size = UDim2.new(0, 96, 1, 0)
+        doneBtn.BackgroundColor3 = theme.Accent
+        doneBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        doneBtn.Font = Enum.Font.Gotham
+        doneBtn.TextSize = 14
+        doneBtn.Text = "Done"
+        doneBtn.ZIndex = 10003
+        doneBtn.Parent = buttonContainer
+
+        local doneCorner = Instance.new("UICorner")
+        doneCorner.CornerRadius = UDim.new(0, 4)
+        doneCorner.Parent = doneBtn
+
+        -- Button handlers
+        local function closeDialog()
+            pcall(function() satVibConn:Disconnect() end)
+            pcall(function() satVibMoveConn:Disconnect() end)
+            pcall(function() satVibEndConn:Disconnect() end)
+            pcall(function() hueConn:Disconnect() end)
+            pcall(function() hueMoveConn:Disconnect() end)
+            pcall(function() hueEndConn:Disconnect() end)
+            
+            tween(dialogOverlay, {BackgroundTransparency = 1}, {duration = 0.2})
+            tween(dialog, {Size = UDim2.new(0, 0, 0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, {duration = 0.2})
+            
+            task.delay(0.2, function()
+                if dialogOverlay then
+                    dialogOverlay:Destroy()
+                end
             end)
-            if success then
-                currentColor = color
-                currentH, currentS, currentV = RGBtoHSV(currentColor)
-                updateDisplays()
+        end
+
+        cancelBtn.MouseButton1Click:Connect(closeDialog)
+
+        doneBtn.MouseButton1Click:Connect(function()
+            currentColor = Color3.fromHSV(workingH, workingS, workingV)
+            currentH, currentS, currentV = workingH, workingS, workingV
+            preview.BackgroundColor3 = currentColor
+            
+            if callback and type(callback) == "function" then
+                safeCallback(callback, currentColor)
             end
-        end
-    end
-
-    -- Mouse interaction helpers
-    local satVibDragging = false
-    local hueDragging = false
-
-    -- Saturation-Value map interaction
-    local satVibConn = satVibMap.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            satVibDragging = true
             
-            -- Handle initial click
-            local mousePos = input.Position
-            local mapPos = satVibMap.AbsolutePosition
-            local mapSize = satVibMap.AbsoluteSize
-            
-            local relX = (mousePos.X - mapPos.X) / mapSize.X
-            local relY = (mousePos.Y - mapPos.Y) / mapSize.Y
-            
-            currentS = clamp(relX, 0, 1)
-            currentV = clamp(1 - relY, 0, 1)
-            updateColorFromHSV()
-        end
-    end)
-    table.insert(connections, satVibConn)
-
-    local satVibMoveConn = UserInputService.InputChanged:Connect(function(input)
-        if satVibDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local mousePos = input.Position
-            local mapPos = satVibMap.AbsolutePosition
-            local mapSize = satVibMap.AbsoluteSize
-            
-            local relX = (mousePos.X - mapPos.X) / mapSize.X
-            local relY = (mousePos.Y - mapPos.Y) / mapSize.Y
-            
-            currentS = clamp(relX, 0, 1)
-            currentV = clamp(1 - relY, 0, 1)
-            updateColorFromHSV()
-        end
-    end)
-    table.insert(connections, satVibMoveConn)
-
-    local satVibEndConn = UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            satVibDragging = false
-        end
-    end)
-    table.insert(connections, satVibEndConn)
-
-    -- Hue slider interaction
-    local hueConn = hueSliderBg.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            hueDragging = true
-            
-            -- Handle initial click
-            local mousePos = input.Position
-            local sliderPos = hueSliderBg.AbsolutePosition
-            local sliderSize = hueSliderBg.AbsoluteSize
-            
-            local relY = (mousePos.Y - sliderPos.Y) / sliderSize.Y
-            currentH = clamp(relY, 0, 1)
-            updateColorFromHSV()
-        end
-    end)
-    table.insert(connections, hueConn)
-
-    local hueMoveConn = UserInputService.InputChanged:Connect(function(input)
-        if hueDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-            local mousePos = input.Position
-            local sliderPos = hueSliderBg.AbsolutePosition
-            local sliderSize = hueSliderBg.AbsoluteSize
-            
-            local relY = (mousePos.Y - sliderPos.Y) / sliderSize.Y
-            currentH = clamp(relY, 0, 1)
-            updateColorFromHSV()
-        end
-    end)
-    table.insert(connections, hueMoveConn)
-
-    local hueEndConn = UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            hueDragging = false
-        end
-    end)
-    table.insert(connections, hueEndConn)
-
-    -- RGB input handlers
-    for i, input in ipairs(rgbInputs) do
-        local conn = input.FocusLost:Connect(function(enterPressed)
-            if enterPressed then
-                updateColorFromRGB()
-            end
+            closeDialog()
         end)
-        table.insert(connections, conn)
-    end
 
-    -- Hex input handler
-    local hexConn = hexInput.FocusLost:Connect(function(enterPressed)
-        if enterPressed then
-            updateColorFromHex()
-        end
-    end)
-    table.insert(connections, hexConn)
-
-    -- Button hover effects using your library's pattern
-    debouncedHover(button,
-        function()
-            tween(button, {
-                BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
-                Size = UDim2.new(1, -4, 1, -4),
-                Position = UDim2.new(0, 2, 0, 2)
-            }, {duration = 0.1})
-        end,
-        function()
-            tween(button, {
-                BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
-                Size = UDim2.new(1, 0, 1, 0),
-                Position = UDim2.new(0, 0, 0, 0)
-            }, {duration = 0.1})
-        end
-    )
-
-    debouncedHover(cancelBtn,
-        function()
-            tween(cancelBtn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.1})
-        end,
-        function()
-            tween(cancelBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.1})
-        end
-    )
-
-    debouncedHover(confirmBtn,
-        function()
-            tween(confirmBtn, {BackgroundColor3 = Color3.fromRGB(100, 170, 255)}, {duration = 0.1})
-        end,
-        function()
-            tween(confirmBtn, {BackgroundColor3 = theme.Accent}, {duration = 0.1})
-        end
-    )
-
-    -- Open/Close functions
-    local function closePopup()
-        if not isOpen then return end
-        isOpen = false
-        
-        tween(popup, {
-            Size = UDim2.new(0, 320, 0, 0),
-            Position = UDim2.new(0, 0, 0, -5),
-            BackgroundTransparency = 1
-        }, {duration = 0.15})
-        
-        task.delay(0.15, function()
-            if popup then
-                popup.Visible = false
-            end
+        -- Close on outside click
+        dialogOverlay.MouseButton1Click:Connect(function()
+            closeDialog()
         end)
+
+        -- Animate in
+        dialog.Size = UDim2.new(0, 0, 0, 0)
+        dialog.Position = UDim2.new(0.5, 0, 0.5, 0)
+        dialogOverlay.BackgroundTransparency = 1
         
-        container.Size = UDim2.new(1, 0, 0, 34)
-        
-        if Window._currentOpenDropdown == closePopup then
-            Window._currentOpenDropdown = nil
-        end
+        tween(dialogOverlay, {BackgroundTransparency = 0.5}, {duration = 0.2})
+        tween(dialog, {Size = UDim2.new(0, 430, 0, 330), Position = UDim2.new(0.5, -215, 0.5, -165)}, {duration = 0.2})
     end
 
-    local function openPopup()
-        if isOpen then return end
-        
-        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closePopup then
-            pcall(function() Window._currentOpenDropdown() end)
-        end
-        
-        isOpen = true
-        popup.Visible = true
-        popup.Size = UDim2.new(0, 320, 0, 0)
-        popup.Position = UDim2.new(0, 0, 0, -5)
-        popup.BackgroundTransparency = 1
-        
-        tween(popup, {
-            Size = UDim2.new(0, 320, 0, 280),
-            Position = UDim2.new(0, 0, 0, -285),
-            BackgroundTransparency = 0
-        }, {duration = 0.15})
-        
-        container.Size = UDim2.new(1, 0, 0, 34)
-        Window._currentOpenDropdown = closePopup
-        
-        -- Update displays with current values
-        updateDisplays()
-    end
-
-    -- Button click handlers
+    -- Button click handler
     local clickConn = button.MouseButton1Click:Connect(function()
-        if isOpen then
-            closePopup()
-        else
-            openPopup()
-        end
+        createColorDialog()
     end)
     table.insert(connections, clickConn)
 
-    local cancelConn = cancelBtn.MouseButton1Click:Connect(function()
-        closePopup()
-    end)
-    table.insert(connections, cancelConn)
-
-    local confirmConn = confirmBtn.MouseButton1Click:Connect(function()
-        if callback and type(callback) == "function" then
-            safeCallback(callback, currentColor)
+    -- Add hover effects
+    debouncedHover(button,
+        function()
+            tween(button, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.1})
+        end,
+        function()
+            tween(button, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.1})
         end
-        closePopup()
-    end)
-    table.insert(connections, confirmConn)
-
-    -- Outside click detection
-    local outsideConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed or not isOpen then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mousePos = input.Position
-            local popupPos = popup.AbsolutePosition
-            local popupSize = popup.AbsoluteSize
-            
-            if mousePos.X < popupPos.X or mousePos.X > popupPos.X + popupSize.X or
-               mousePos.Y < popupPos.Y or mousePos.Y > popupPos.Y + popupSize.Y then
-                local containerPos = container.AbsolutePosition
-                local containerSize = container.AbsoluteSize
-                
-                if mousePos.X < containerPos.X or mousePos.X > containerPos.X + containerSize.X or
-                   mousePos.Y < containerPos.Y or mousePos.Y > containerPos.Y + containerSize.Y then
-                    closePopup()
-                end
-            end
-        end
-    end)
-    table.insert(connections, outsideConn)
-
-    -- Cleanup function
-    local function cleanup()
-        for _, conn in ipairs(connections) do
-            pcall(function() conn:Disconnect() end)
-        end
-        connections = {}
-    end
-
-    -- Cleanup on removal
-    local ancestryConn = container.AncestryChanged:Connect(function()
-        if not container.Parent then
-            cleanup()
-        end
-    end)
-    table.insert(connections, ancestryConn)
-
-    -- Add to global tracker for window cleanup
-    for _, conn in ipairs(connections) do
-        globalConnTracker:add(conn)
-    end
-
-    -- Initial update
-    updateDisplays()
+    )
 
     return {
-        Get = function()
-            return currentColor
-        end,
-        Set = function(newColor)
-            if typeof(newColor) == "Color3" then
-                currentColor = newColor
-                currentH, currentS, currentV = RGBtoHSV(currentColor)
-                updateDisplays()
-                
-                if callback and type(callback) == "function" then
-                    safeCallback(callback, currentColor)
-                end
-                return true
-            end
-            return false
-        end,
-        Close = function()
-            closePopup()
-        end,
-        Destroy = function()
-            closePopup()
-            cleanup()
-            if container then
-                pcall(function() container:Destroy() end)
+        Get = function() return currentColor end,
+        Set = function(color)
+            if typeof(color) == "Color3" then
+                currentColor = color
+                currentH, currentS, currentV = Color3.toHSV(color)
+                preview.BackgroundColor3 = color
+                if callback then safeCallback(callback, color) end
             end
         end
     }
