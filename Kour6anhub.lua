@@ -2024,17 +2024,19 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     local outsideClickConn = nil
     local ancestryConn = nil
 
-    -- create popup container (lazily)
+    -- create popup container (fixed to be positioned relative to wrap, not ScreenGui)
     local function ensurePopup()
         if popup and popup.Parent then return end
         popup = Instance.new("Frame")
         popup.Name = "_ColorpickerPopup"
         popup.Size = UDim2.new(0, 0, 0, 0)
+        popup.Position = UDim2.new(0, 0, 1, 4) -- Position below the wrap frame
         popup.BackgroundColor3 = theme.SectionBackground
         popup.BorderSizePixel = 0
         popup.Visible = false
         popup.ZIndex = 1000
-        popup.Parent = ScreenGui
+        popup.ClipsDescendants = true
+        popup.Parent = wrap -- Changed from ScreenGui to wrap for relative positioning
 
         local pCorner = Instance.new("UICorner")
         pCorner.CornerRadius = UDim.new(0, 8)
@@ -2125,7 +2127,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             newValue = math.clamp(tonumber(newValue) or 0, 0, 1)
             currentValue = newValue
 
-            -- UI updates (no tweens necessary for correctness)
+            -- UI updates
             knob.Position = UDim2.new(currentValue, -8, 0.5, -8)
             label.Text = labelText .. ": " .. math.floor(currentValue * 255)
 
@@ -2140,10 +2142,14 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
 
             -- update preview boxes and gradients
             preview.BackgroundColor3 = cur
-            if popup and popup._previewBox then popup._previewBox.BackgroundColor3 = cur end
+            if popup and popup:FindFirstChild("_previewBox") then
+                popup._previewBox.BackgroundColor3 = cur
+            end
             -- refresh gradients for other sliders
             for k,v in pairs(sliderData) do
-                if v and v.updateGradient then pcall(v.updateGradient) end
+                if k ~= component and v and v.updateGradient then 
+                    pcall(v.updateGradient) 
+                end
             end
 
             if triggerCallback and callback and type(callback) == "function" then
@@ -2201,10 +2207,31 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     local function closePopup()
         if not isOpen then return end
         isOpen = false
-        -- Hide popup gracefully
+        
+        -- Animate close
         if popup and popup.Parent then
-            popup.Visible = false
-            popup.Size = UDim2.new(0, 0, 0, 0)
+            tween(popup, {
+                Size = UDim2.new(0, 300, 0, 0),
+                BackgroundTransparency = 1
+            }, {duration = 0.15})
+            
+            -- Hide sliders
+            for _, slider in pairs(sliderData) do
+                if slider.container and slider.container.Parent then
+                    tween(slider.container, {BackgroundTransparency = 1}, {duration = 0.1})
+                    for _, child in pairs(slider.container:GetChildren()) do
+                        if child:IsA("GuiObject") then
+                            tween(child, {BackgroundTransparency = 1, TextTransparency = 1}, {duration = 0.1})
+                        end
+                    end
+                end
+            end
+            
+            task.delay(0.15, function()
+                if popup then
+                    popup.Visible = false
+                end
+            end)
         end
 
         -- disconnect outside click
@@ -2222,33 +2249,31 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             Window._currentOpenDropdown = nil
         end
 
-        -- shrink wrapper to original height
-        pcall(function() wrap.Size = UDim2.new(1, 0, 0, 34) end)
+        -- Reset wrapper size
+        wrap.Size = UDim2.new(1, 0, 0, 34)
     end
 
     local function openPopup()
         if isOpen then return end
+        
+        -- Close any other open dropdowns/colorpickers
+        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closePopup then
+            pcall(function() Window._currentOpenDropdown() end)
+        end
+        
         ensurePopup()
         if not popup or not popup.Parent then return end
 
-        -- build content (clear old non-style children)
+        -- Clear old content (but keep UI elements)
         for _, child in pairs(popup:GetChildren()) do
-            if not child:IsA("UICorner") and not child:IsA("UIStroke") then
+            if not child:IsA("UICorner") and not child:IsA("UIStroke") and child.Name ~= "_previewBox" then
                 pcall(function() child:Destroy() end)
             end
         end
 
-        -- Position popup next to button (clamped to viewport)
-        local btnPos = btn.AbsolutePosition or Vector2.new(0,0)
-        local btnSize = btn.AbsoluteSize or Vector2.new(0,0)
-        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1024,768)
         local popupWidth, popupHeight = 300, 190
-
-        local x = math.clamp(btnPos.X + btnSize.X + 10, 8, math.max(8, viewport.X - popupWidth - 8))
-        local y = math.clamp(btnPos.Y, 8, math.max(8, viewport.Y - popupHeight - 8))
-
-        popup.Position = UDim2.new(0, x, 0, y)
-        popup.Size = UDim2.new(0, popupWidth, 0, popupHeight)
+        popup.Size = UDim2.new(0, popupWidth, 0, 0)
+        popup.BackgroundTransparency = 1
         popup.Visible = true
 
         -- title + preview inside popup
@@ -2261,13 +2286,16 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         title.Font = Enum.Font.GothamBold
         title.TextSize = 14
         title.TextXAlignment = Enum.TextXAlignment.Left
+        title.TextTransparency = 1
         title.Parent = popup
 
         local previewBox = Instance.new("Frame")
+        previewBox.Name = "_previewBox"
         previewBox.Size = UDim2.new(0, 36, 0, 36)
         previewBox.Position = UDim2.new(1, -48, 0, 8)
         previewBox.BackgroundColor3 = cur
         previewBox.BorderSizePixel = 0
+        previewBox.BackgroundTransparency = 1
         previewBox.Parent = popup
 
         local previewBoxCorner = Instance.new("UICorner")
@@ -2277,38 +2305,73 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         local previewBoxStroke = Instance.new("UIStroke")
         previewBoxStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
         previewBoxStroke.Thickness = 1
+        previewBoxStroke.Transparency = 1
         previewBoxStroke.Parent = previewBox
 
         popup._previewBox = previewBox
 
         -- Create 3 RGB sliders
-        -- Remove previous sliderData entries (keep connections tracked globally)
         sliderData = {}
         local rSlider = createRGBSlider(popup, 48, "R", "r", cur.R)
         local gSlider = createRGBSlider(popup, 88, "G", "g", cur.G)
         local bSlider = createRGBSlider(popup, 128, "B", "b", cur.B)
 
-        -- store them back
-        sliderData.r = rSlider
-        sliderData.g = gSlider
-        sliderData.b = bSlider
+        -- Initially hide sliders
+        for _, slider in pairs(sliderData) do
+            if slider.container then
+                slider.container.BackgroundTransparency = 1
+                for _, child in pairs(slider.container:GetChildren()) do
+                    if child:IsA("GuiObject") then
+                        child.BackgroundTransparency = 1
+                        child.TextTransparency = 1
+                    end
+                end
+            end
+        end
 
-        -- expand wrapper so dropdown area fits
+        -- Animate open
+        tween(popup, {
+            Size = UDim2.new(0, popupWidth, 0, popupHeight),
+            BackgroundTransparency = 0
+        }, {duration = 0.15})
+
+        tween(title, {TextTransparency = 0}, {duration = 0.15})
+        tween(previewBox, {BackgroundTransparency = 0}, {duration = 0.15})
+        tween(previewBoxStroke, {Transparency = 0}, {duration = 0.15})
+
+        -- Animate sliders
+        task.delay(0.1, function()
+            for component, slider in pairs(sliderData) do
+                if slider.container and slider.container.Parent then
+                    tween(slider.container, {BackgroundTransparency = 0}, {duration = 0.1})
+                    for _, child in pairs(slider.container:GetChildren()) do
+                        if child:IsA("GuiObject") then
+                            tween(child, {BackgroundTransparency = 0, TextTransparency = 0}, {duration = 0.1})
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- expand wrapper
         wrap.Size = UDim2.new(1, 0, 0, 34 + popupHeight + 6)
 
         isOpen = true
         Window._currentOpenDropdown = closePopup
 
-        -- outside click detection (use InputBegan)
-        task.delay(0.05, function()
+        -- outside click detection (improved)
+        task.delay(0.2, function() -- Delay to prevent immediate closing
+            if not isOpen then return end
             outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                 if gameProcessed or not isOpen then return end
                 if input.UserInputType == Enum.UserInputType.MouseButton1 then
                     local mouse = input.Position
-                    local pPos = popup.AbsolutePosition
-                    local pSize = popup.AbsoluteSize
-                    if mouse.X < pPos.X or mouse.X > pPos.X + pSize.X or
-                       mouse.Y < pPos.Y or mouse.Y > pPos.Y + pSize.Y then
+                    local wrapPos = wrap.AbsolutePosition
+                    local wrapSize = wrap.AbsoluteSize
+                    
+                    -- Check if click is outside the entire wrap area (including popup)
+                    if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
+                       mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
                         closePopup()
                     end
                 end
@@ -2316,13 +2379,10 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             globalConnTracker:add(outsideClickConn)
         end)
 
-        -- ancestry guard: if wrap removed, close and disconnect outsideClickConn
+        -- ancestry guard: if wrap removed, close and disconnect
         ancestryConn = wrap.AncestryChanged:Connect(function(_, parent)
             if not parent then
-                pcall(function()
-                    if outsideClickConn then outsideClickConn:Disconnect() end
-                    ancestryConn:Disconnect()
-                end)
+                closePopup()
             end
         end)
         globalConnTracker:add(ancestryConn)
@@ -2337,11 +2397,30 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         end
     end)
 
-    -- hover effects using existing debouncedHover
+    -- hover effects
     debouncedHover(btn,
-        function() tween(btn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.1}) end,
-        function() tween(btn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.1}) end
+        function() 
+            tween(btn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.1}) 
+        end,
+        function() 
+            tween(btn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.1}) 
+        end
     )
+
+    -- Add tab change listener to close popup when switching tabs
+    if Window._currentTab then
+        local tabClickConn
+        for _, tab in ipairs(Tabs) do
+            if tab.Button and tab.Button ~= Window._currentTab then
+                local conn = tab.Button.MouseButton1Click:Connect(function()
+                    if isOpen then
+                        closePopup()
+                    end
+                end)
+                globalConnTracker:add(conn)
+            end
+        end
+    end
 
     -- API
     return {
@@ -2351,7 +2430,9 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             if ok and typeof(c) == "Color3" then
                 cur = c
                 preview.BackgroundColor3 = cur
-                if popup and popup._previewBox then popup._previewBox.BackgroundColor3 = cur end
+                if popup and popup:FindFirstChild("_previewBox") then 
+                    popup._previewBox.BackgroundColor3 = cur 
+                end
                 -- update gradients if sliders exist
                 for k,v in pairs(sliderData) do
                     if v and v.updateGradient then pcall(v.updateGradient) end
@@ -2366,7 +2447,6 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         Close = function() closePopup() end
     }
 end
-
 
 -- Compatibility aliases
 SectionObj.NewColorPicker = SectionObj.NewColorpicker
