@@ -2425,7 +2425,10 @@ SectionObj.NewTextBox = SectionObj.NewTextbox
 SectionObj.NewKeyBind = SectionObj.NewKeybind
 
     return SectionObj
-end
+        end
+
+        return TabObj
+    end
 
     -- Apply initial theme
     Window:SetTheme(themeName or "LightTheme")
@@ -2527,6 +2530,9 @@ debouncedHover(CloseBtn,
         }, {duration = 0.1})
     end
 )
+   -- Set default toggle key
+    Window:SetToggleKey(Enum.KeyCode.RightControl)
+
     return Window
 end
 
