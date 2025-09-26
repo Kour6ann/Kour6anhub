@@ -2344,8 +2344,6 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         previewBoxStroke.Transparency = 1
         previewBoxStroke.Parent = previewBox
 
-        popup._previewBox = previewBox
-
         -- Create 3 RGB sliders
         sliderData = {}
         local rSlider = createRGBSlider(popup, 48, "R", "r", cur.R)
