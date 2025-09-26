@@ -2251,17 +2251,21 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
                 BackgroundTransparency = 1
             }, {duration = 0.15})
             
-            -- Hide sliders
-            for _, slider in pairs(sliderData) do
-                if slider.container and slider.container.Parent then
-                    tween(slider.container, {BackgroundTransparency = 1}, {duration = 0.1})
-                    for _, child in pairs(slider.container:GetChildren()) do
-                        if child:IsA("GuiObject") then
-                            tween(child, {BackgroundTransparency = 1, TextTransparency = 1}, {duration = 0.1})
-                        end
-                    end
-                end
-            end
+           -- Hide sliders
+       for _, slider in pairs(sliderData) do
+           if slider.container and slider.container.Parent then
+              tween(slider.container, {BackgroundTransparency = 1}, {duration = 0.1})
+               for _, child in pairs(slider.container:GetChildren()) do
+                   if child:IsA("GuiObject") then
+                       if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                          tween(child, {BackgroundTransparency = 1, TextTransparency = 1}, {duration = 0.1})
+                       else
+                          tween(child, {BackgroundTransparency = 1}, {duration = 0.1})
+                       end
+                   end
+               end
+           end
+       end
             
             task.delay(0.15, function()
                 if popup then
@@ -2351,17 +2355,20 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         local bSlider = createRGBSlider(popup, 128, "B", "b", cur.B)
 
         -- Initially hide sliders
-        for _, slider in pairs(sliderData) do
-            if slider.container then
-                slider.container.BackgroundTransparency = 1
-                for _, child in pairs(slider.container:GetChildren()) do
-                    if child:IsA("GuiObject") then
-                        child.BackgroundTransparency = 1
-                        child.TextTransparency = 1
-                    end
+for _, slider in pairs(sliderData) do
+    if slider.container then
+        slider.container.BackgroundTransparency = 1
+        for _, child in pairs(slider.container:GetChildren()) do
+            if child:IsA("GuiObject") then
+                child.BackgroundTransparency = 1
+                -- Only set TextTransparency for objects that have text
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    child.TextTransparency = 1
                 end
             end
         end
+    end
+end
 
         -- Animate open
         tween(popup, {
@@ -2374,18 +2381,23 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         tween(previewBoxStroke, {Transparency = 0}, {duration = 0.15})
 
         -- Animate sliders
-        task.delay(0.1, function()
-            for component, slider in pairs(sliderData) do
-                if slider.container and slider.container.Parent then
-                    tween(slider.container, {BackgroundTransparency = 0}, {duration = 0.1})
-                    for _, child in pairs(slider.container:GetChildren()) do
-                        if child:IsA("GuiObject") then
-                            tween(child, {BackgroundTransparency = 0, TextTransparency = 0}, {duration = 0.1})
-                        end
+task.delay(0.1, function()
+    for component, slider in pairs(sliderData) do
+        if slider.container and slider.container.Parent then
+            tween(slider.container, {BackgroundTransparency = 0}, {duration = 0.1})
+            for _, child in pairs(slider.container:GetChildren()) do
+                if child:IsA("GuiObject") then
+                    -- Separate tweens based on object type
+                    if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                        tween(child, {BackgroundTransparency = 0, TextTransparency = 0}, {duration = 0.1})
+                    else
+                        tween(child, {BackgroundTransparency = 0}, {duration = 0.1})
                     end
                 end
             end
-        end)
+        end
+    end
+end)
 
         -- expand wrapper
         wrap.Size = UDim2.new(1, 0, 0, 34 + popupHeight + 6)
