@@ -2020,11 +2020,11 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     container.Size = UDim2.new(1, 0, 0, 34)
     container.BackgroundTransparency = 1
     container.Parent = Section
+    container.ClipsDescendants = true
 
     -- Main button
     local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -32, 1, 0)
-    button.Position = UDim2.new(0, 0, 0, 0)
+    button.Size = UDim2.new(1, 0, 1, 0)
     button.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
     button.AutoButtonColor = false
     button.Font = Enum.Font.Gotham
@@ -2040,6 +2040,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
 
     local buttonPadding = Instance.new("UIPadding")
     buttonPadding.PaddingLeft = UDim.new(0, 8)
+    buttonPadding.PaddingRight = UDim.new(0, 28)
     buttonPadding.Parent = button
 
     -- Color preview
@@ -2054,19 +2055,24 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     previewCorner.CornerRadius = UDim.new(0, 6)
     previewCorner.Parent = preview
 
-    -- Popup frame (created once, reused)
+    local previewStroke = Instance.new("UIStroke")
+    previewStroke.Color = Color3.fromRGB(100, 100, 100)
+    previewStroke.Thickness = 1
+    previewStroke.Parent = preview
+
+    -- Popup frame
     local popup = Instance.new("Frame")
     popup.Name = "_ColorPickerPopup"
-    popup.Size = UDim2.new(0, 280, 0, 180)
+    popup.Size = UDim2.new(1, 0, 0, 150) -- Fixed height
     popup.Position = UDim2.new(0, 0, 1, 4)
     popup.BackgroundColor3 = theme.SectionBackground
     popup.BorderSizePixel = 0
     popup.Visible = false
-    popup.ZIndex = 1000
+    popup.ZIndex = 100
     popup.Parent = container
 
     local popupCorner = Instance.new("UICorner")
-    popupCorner.CornerRadius = UDim.new(0, 8)
+    popupCorner.CornerRadius = UDim.new(0, 6)
     popupCorner.Parent = popup
 
     local popupStroke = Instance.new("UIStroke")
@@ -2078,42 +2084,44 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     -- Title
     local title = Instance.new("TextLabel")
     title.Text = name or "Color Picker"
-    title.Size = UDim2.new(1, -8, 0, 24)
-    title.Position = UDim2.new(0, 8, 0, 8)
+    title.Size = UDim2.new(1, -8, 0, 20)
+    title.Position = UDim2.new(0, 8, 0, 4)
     title.BackgroundTransparency = 1
     title.TextColor3 = theme.Text
     title.Font = Enum.Font.GothamBold
-    title.TextSize = 14
+    title.TextSize = 12
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Parent = popup
 
-    -- RGB Input fields (much simpler approach)
+    -- RGB Input fields with better layout
     local inputs = {}
     local labels = {"R", "G", "B"}
-    local values = {currentColor.R, currentColor.G, currentColor.B}
+    local values = {math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255)}
 
     for i = 1, 3 do
-        local y = 40 + (i - 1) * 35
+        local y = 30 + (i - 1) * 36
         
+        -- Label
         local label = Instance.new("TextLabel")
         label.Text = labels[i] .. ":"
-        label.Size = UDim2.new(0, 20, 0, 24)
+        label.Size = UDim2.new(0, 20, 0, 20)
         label.Position = UDim2.new(0, 8, 0, y)
         label.BackgroundTransparency = 1
         label.TextColor3 = theme.Text
         label.Font = Enum.Font.Gotham
-        label.TextSize = 12
+        label.TextSize = 11
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.Parent = popup
 
+        -- Text input
         local input = Instance.new("TextBox")
-        input.Size = UDim2.new(0, 60, 0, 24)
-        input.Position = UDim2.new(0, 32, 0, y)
+        input.Size = UDim2.new(0, 50, 0, 22)
+        input.Position = UDim2.new(0, 30, 0, y)
         input.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
         input.TextColor3 = theme.Text
         input.Font = Enum.Font.Gotham
-        input.TextSize = 12
-        input.Text = tostring(math.floor(values[i] * 255))
+        input.TextSize = 11
+        input.Text = tostring(values[i])
         input.ClearTextOnFocus = false
         input.Parent = popup
 
@@ -2121,33 +2129,60 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         inputCorner.CornerRadius = UDim.new(0, 4)
         inputCorner.Parent = input
 
-        -- Simple slider
+        local inputPadding = Instance.new("UIPadding")
+        inputPadding.PaddingLeft = UDim.new(0, 4)
+        inputPadding.PaddingRight = UDim.new(0, 4)
+        inputPadding.Parent = input
+
+        -- Slider background
         local sliderBg = Instance.new("Frame")
-        sliderBg.Size = UDim2.new(0, 120, 0, 16)
-        sliderBg.Position = UDim2.new(0, 100, 0, y + 4)
+        sliderBg.Size = UDim2.new(0, 120, 0, 12)
+        sliderBg.Position = UDim2.new(0, 90, 0, y + 5)
         sliderBg.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
         sliderBg.BorderSizePixel = 0
         sliderBg.Parent = popup
 
         local sliderCorner = Instance.new("UICorner")
-        sliderCorner.CornerRadius = UDim.new(0, 8)
+        sliderCorner.CornerRadius = UDim.new(0, 6)
         sliderCorner.Parent = sliderBg
 
+        -- Slider fill
+        local sliderFill = Instance.new("Frame")
+        sliderFill.Size = UDim2.new(values[i] / 255, 0, 1, 0)
+        sliderFill.BackgroundColor3 = Color3.new(values[1] / 255, i == 1 and values[2] / 255 or 0, i == 1 and values[3] / 255 or 0)
+        if i == 2 then sliderFill.BackgroundColor3 = Color3.new(0, values[2] / 255, 0) end
+        if i == 3 then sliderFill.BackgroundColor3 = Color3.new(0, 0, values[3] / 255) end
+        sliderFill.BorderSizePixel = 0
+        sliderFill.ZIndex = 2
+        sliderFill.Parent = sliderBg
+
+        local fillCorner = Instance.new("UICorner")
+        fillCorner.CornerRadius = UDim.new(0, 6)
+        fillCorner.Parent = sliderFill
+
+        -- Slider knob
         local sliderKnob = Instance.new("Frame")
-        sliderKnob.Size = UDim2.new(0, 12, 0, 12)
-        sliderKnob.Position = UDim2.new(values[i], -6, 0.5, -6)
-        sliderKnob.BackgroundColor3 = theme.Accent
+        sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+        sliderKnob.Position = UDim2.new(values[i] / 255, -8, 0.5, -8)
+        sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         sliderKnob.BorderSizePixel = 0
+        sliderKnob.ZIndex = 3
         sliderKnob.Parent = sliderBg
 
         local knobCorner = Instance.new("UICorner")
         knobCorner.CornerRadius = UDim.new(1, 0)
         knobCorner.Parent = sliderKnob
 
+        local knobStroke = Instance.new("UIStroke")
+        knobStroke.Color = theme.Accent
+        knobStroke.Thickness = 2
+        knobStroke.Parent = sliderKnob
+
         inputs[i] = {
             input = input,
-            slider = sliderBg,
-            knob = sliderKnob,
+            sliderBg = sliderBg,
+            sliderFill = sliderFill,
+            sliderKnob = sliderKnob,
             value = values[i]
         }
     end
@@ -2155,28 +2190,49 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     -- Color preview in popup
     local popupPreview = Instance.new("Frame")
     popupPreview.Size = UDim2.new(0, 40, 0, 40)
-    popupPreview.Position = UDim2.new(1, -48, 0, 40)
+    popupPreview.Position = UDim2.new(1, -48, 0, 30)
     popupPreview.BackgroundColor3 = currentColor
     popupPreview.BorderSizePixel = 0
     popupPreview.Parent = popup
 
     local popupPreviewCorner = Instance.new("UICorner")
-    popupPreviewCorner.CornerRadius = UDim.new(0, 8)
+    popupPreviewCorner.CornerRadius = UDim.new(0, 6)
     popupPreviewCorner.Parent = popupPreview
+
+    local popupPreviewStroke = Instance.new("UIStroke")
+    popupPreviewStroke.Color = Color3.fromRGB(100, 100, 100)
+    popupPreviewStroke.Thickness = 1
+    popupPreviewStroke.Parent = popupPreview
 
     -- Update color function
     local function updateColor()
-        local r = math.clamp(inputs[1].value, 0, 1)
-        local g = math.clamp(inputs[2].value, 0, 1)
-        local b = math.clamp(inputs[3].value, 0, 1)
+        local r = math.clamp(inputs[1].value, 0, 255) / 255
+        local g = math.clamp(inputs[2].value, 0, 255) / 255
+        local b = math.clamp(inputs[3].value, 0, 255) / 255
         
         currentColor = Color3.new(r, g, b)
         preview.BackgroundColor3 = currentColor
         popupPreview.BackgroundColor3 = currentColor
         
+        -- Update slider fill colors
+        inputs[1].sliderFill.BackgroundColor3 = Color3.new(r, g, b)
+        inputs[2].sliderFill.BackgroundColor3 = Color3.new(0, g, 0)
+        inputs[3].sliderFill.BackgroundColor3 = Color3.new(0, 0, b)
+        
         if callback and type(callback) == "function" then
             safeCallback(callback, currentColor)
         end
+    end
+
+    -- Update slider position and fill
+    local function updateSlider(i, value)
+        value = math.clamp(value, 0, 255)
+        inputs[i].value = value
+        inputs[i].input.Text = tostring(value)
+        
+        local relPos = value / 255
+        inputs[i].sliderFill.Size = UDim2.new(relPos, 0, 1, 0)
+        inputs[i].sliderKnob.Position = UDim2.new(relPos, -8, 0.5, -8)
     end
 
     -- Setup input handlers
@@ -2187,57 +2243,97 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         local inputConn = data.input.FocusLost:Connect(function(enterPressed)
             local value = tonumber(data.input.Text)
             if value then
-                value = math.clamp(value, 0, 255) / 255
-                data.value = value
-                data.input.Text = tostring(math.floor(value * 255))
-                data.knob.Position = UDim2.new(value, -6, 0.5, -6)
+                updateSlider(i, value)
                 updateColor()
             else
-                data.input.Text = tostring(math.floor(data.value * 255))
+                data.input.Text = tostring(data.value)
             end
         end)
         table.insert(connections, inputConn)
 
         -- Slider handler
         local dragging = false
-        local beganConn = data.slider.InputBegan:Connect(function(input)
+        
+        local function updateFromMouse(input)
+            local relativeX = input.Position.X - data.sliderBg.AbsolutePosition.X
+            local value = math.clamp(relativeX / data.sliderBg.AbsoluteSize.X, 0, 1) * 255
+            updateSlider(i, value)
+            updateColor()
+        end
+
+        local beganConn = data.sliderBg.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.MouseButton1 then
                 dragging = true
-                local relativeX = input.Position.X - data.slider.AbsolutePosition.X
-                local value = math.clamp(relativeX / data.slider.AbsoluteSize.X, 0, 1)
-                data.value = value
-                data.input.Text = tostring(math.floor(value * 255))
-                data.knob.Position = UDim2.new(value, -6, 0.5, -6)
-                updateColor()
+                updateFromMouse(input)
+                tween(data.sliderKnob, {Size = UDim2.new(0, 20, 0, 20)}, {duration = 0.1})
             end
         end)
         table.insert(connections, beganConn)
 
         local movedConn = UserInputService.InputChanged:Connect(function(input)
             if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                local relativeX = input.Position.X - data.slider.AbsolutePosition.X
-                local value = math.clamp(relativeX / data.slider.AbsoluteSize.X, 0, 1)
-                data.value = value
-                data.input.Text = tostring(math.floor(value * 255))
-                data.knob.Position = UDim2.new(value, -6, 0.5, -6)
-                updateColor()
+                updateFromMouse(input)
             end
         end)
         table.insert(connections, movedConn)
 
         local endedConn = UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if dragging and input.UserInputType == Enum.UserInputType.MouseButton1 then
                 dragging = false
+                tween(data.sliderKnob, {Size = UDim2.new(0, 16, 0, 16)}, {duration = 0.1})
             end
         end)
         table.insert(connections, endedConn)
+
+        -- Hover effects for slider
+        debouncedHover(data.sliderBg,
+            function()
+                if not dragging then
+                    tween(data.sliderKnob, {Size = UDim2.new(0, 18, 0, 18)}, {duration = 0.1})
+                end
+            end,
+            function()
+                if not dragging then
+                    tween(data.sliderKnob, {Size = UDim2.new(0, 16, 0, 16)}, {duration = 0.1})
+                end
+            end
+        )
     end
+
+    -- Button hover effects
+    debouncedHover(button,
+        function()
+            tween(button, {
+                BackgroundColor3 = theme.ButtonHover or theme.TabBackground,
+                Size = UDim2.new(1, -4, 1, -4),
+                Position = UDim2.new(0, 2, 0, 2)
+            }, {duration = 0.1})
+        end,
+        function()
+            tween(button, {
+                BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground,
+                Size = UDim2.new(1, 0, 1, 0),
+                Position = UDim2.new(0, 0, 0, 0)
+            }, {duration = 0.1})
+        end
+    )
 
     -- Open/Close functions
     local function closePopup()
         if not isOpen then return end
         isOpen = false
-        popup.Visible = false
+        
+        tween(popup, {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1
+        }, {duration = 0.15})
+        
+        task.delay(0.15, function()
+            if popup then
+                popup.Visible = false
+            end
+        end)
+        
         container.Size = UDim2.new(1, 0, 0, 34)
         
         if Window._currentOpenDropdown == closePopup then
@@ -2254,16 +2350,16 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         
         isOpen = true
         popup.Visible = true
-        container.Size = UDim2.new(1, 0, 0, 34 + 184)
-        Window._currentOpenDropdown = closePopup
+        popup.Size = UDim2.new(1, 0, 0, 0)
+        popup.BackgroundTransparency = 1
         
-        -- Update inputs to current color
-        local values = {currentColor.R, currentColor.G, currentColor.B}
-        for i = 1, 3 do
-            inputs[i].value = values[i]
-            inputs[i].input.Text = tostring(math.floor(values[i] * 255))
-            inputs[i].knob.Position = UDim2.new(values[i], -6, 0.5, -6)
-        end
+        tween(popup, {
+            Size = UDim2.new(1, 0, 0, 150),
+            BackgroundTransparency = 0
+        }, {duration = 0.15})
+        
+        container.Size = UDim2.new(1, 0, 0, 34 + 154)
+        Window._currentOpenDropdown = closePopup
     end
 
     -- Button click handler
@@ -2280,12 +2376,12 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     local outsideConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if gameProcessed or not isOpen then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            local mouse = input.Position
+            local mousePos = input.Position
             local containerPos = container.AbsolutePosition
             local containerSize = container.AbsoluteSize
             
-            if mouse.X < containerPos.X or mouse.X > containerPos.X + containerSize.X or
-               mouse.Y < containerPos.Y or mouse.Y > containerPos.Y + containerSize.Y then
+            if mousePos.X < containerPos.X or mousePos.X > containerPos.X + containerSize.X or
+               mousePos.Y < containerPos.Y or mousePos.Y > containerPos.Y + containerSize.Y then
                 closePopup()
             end
         end
@@ -2313,22 +2409,13 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             local color = normalizeColor(newColor)
             if color then
                 currentColor = color
-                preview.BackgroundColor3 = currentColor
-                popupPreview.BackgroundColor3 = currentColor
+                local r, g, b = math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255)
                 
-                -- Update inputs if popup is open
-                if isOpen then
-                    local values = {currentColor.R, currentColor.G, currentColor.B}
-                    for i = 1, 3 do
-                        inputs[i].value = values[i]
-                        inputs[i].input.Text = tostring(math.floor(values[i] * 255))
-                        inputs[i].knob.Position = UDim2.new(values[i], -6, 0.5, -6)
-                    end
-                end
+                updateSlider(1, r)
+                updateSlider(2, g)
+                updateSlider(3, b)
+                updateColor()
                 
-                if callback and type(callback) == "function" then
-                    safeCallback(callback, currentColor)
-                end
                 return true
             end
             return false
