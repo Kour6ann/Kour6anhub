@@ -2260,7 +2260,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
 
     local hexPadding = Instance.new("UIPadding")
     hexPadding.PaddingLeft = UDim.new(0, 6)
-    hexPadding.PaddingRight = UDim2.new(0, 6)
+    hexPadding.PaddingRight = UDim.new(0, 6)
     hexPadding.Parent = hexInput
 
     -- Control buttons
