@@ -2024,7 +2024,6 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     local isOpen = false
     local sliderData = {} -- Store slider components and their connections
     local outsideClickConn = nil
-    local updateLoopConn = nil
 
     -- Create individual RGB slider
     local function createRGBSlider(parent, yPos, labelText, component, initialValue)
@@ -2128,7 +2127,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             
             -- Update all gradients
             for _, data in pairs(sliderData) do
-                if data.updateGradient then
+                if data.updateGradient and data.updateGradient ~= updateGradient then
                     data.updateGradient()
                 end
             end
@@ -2176,6 +2175,11 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             connections = {inputBeganConn, inputChangedConn, inputEndedConn}
         }
 
+        -- Add connections to global tracker
+        globalConnTracker:add(inputBeganConn)
+        globalConnTracker:add(inputChangedConn)
+        globalConnTracker:add(inputEndedConn)
+
         return container
     end
 
@@ -2191,19 +2195,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             outsideClickConn = nil
         end
         
-        if updateLoopConn then
-            pcall(function() updateLoopConn:Disconnect() end)
-            updateLoopConn = nil
-        end
-        
-        -- Disconnect slider connections
-        for _, data in pairs(sliderData) do
-            if data.connections then
-                for _, conn in ipairs(data.connections) do
-                    pcall(function() conn:Disconnect() end)
-                end
-            end
-        end
+        -- Clear slider data (connections are already tracked globally)
         sliderData = {}
         
         -- Animate close
@@ -2234,6 +2226,11 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     -- Open popup function
     local function openPopup()
         if isOpen then return end
+        
+        -- Close any other open dropdowns/popups
+        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closePopup then
+            pcall(function() Window._currentOpenDropdown() end)
+        end
         
         isOpen = true
         sliderData = {}
@@ -2324,6 +2321,9 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             Size = UDim2.new(0, popupWidth, 0, popupHeight),
             BackgroundTransparency = 0
         }, {duration = 0.15})
+
+        -- Set as current open dropdown
+        Window._currentOpenDropdown = closePopup
 
         -- Outside click detection
         task.delay(0.1, function()
@@ -2418,6 +2418,13 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         Close = closePopup
     }
 end
+
+-- Compatibility aliases
+SectionObj.NewColorPicker = SectionObj.NewColorpicker
+SectionObj.NewTextBox = SectionObj.NewTextbox
+SectionObj.NewKeyBind = SectionObj.NewKeybind
+
+return SectionObj
 
     -- Apply initial theme
     Window:SetTheme(themeName or "LightTheme")
