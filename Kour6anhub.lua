@@ -2424,7 +2424,6 @@ SectionObj.NewColorPicker = SectionObj.NewColorpicker
 SectionObj.NewTextBox = SectionObj.NewTextbox
 SectionObj.NewKeyBind = SectionObj.NewKeybind
 
-return SectionObj
 
     -- Apply initial theme
     Window:SetTheme(themeName or "LightTheme")
