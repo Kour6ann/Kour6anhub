@@ -2142,8 +2142,9 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
 
             -- update preview boxes and gradients
             preview.BackgroundColor3 = cur
-            if popup and popup:FindFirstChild("_previewBox") then
-                popup._previewBox.BackgroundColor3 = cur
+            local previewBox = popup and popup:FindFirstChild("_previewBox")
+            if previewBox then
+                previewBox.BackgroundColor3 = cur
             end
             -- refresh gradients for other sliders
             for k,v in pairs(sliderData) do
@@ -2430,8 +2431,9 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             if ok and typeof(c) == "Color3" then
                 cur = c
                 preview.BackgroundColor3 = cur
-                if popup and popup:FindFirstChild("_previewBox") then 
-                    popup._previewBox.BackgroundColor3 = cur 
+                local previewBox = popup and popup:FindFirstChild("_previewBox")
+                if previewBox then
+                    previewBox.BackgroundColor3 = cur
                 end
                 -- update gradients if sliders exist
                 for k,v in pairs(sliderData) do
