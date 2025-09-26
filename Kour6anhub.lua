@@ -1990,7 +1990,7 @@ end
 -- Fixed Colorpicker implementation for Kour6anHub
 -- This replaces the existing NewColorpicker function in SectionObj
 
-ffunction SectionObj:NewColorpicker(name, defaultColor, callback)
+function SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local currentH, currentS, currentV = Color3.toHSV(currentColor)
     local connections = {}
