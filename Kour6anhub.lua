@@ -1990,6 +1990,8 @@ end
 -- Fixed Colorpicker implementation for Kour6anHub
 -- This replaces the existing NewColorpicker function in SectionObj
 
+-- Fixed NewColorpicker function - replace the existing one in your code
+
 function SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local currentH, currentS, currentV = Color3.toHSV(currentColor)
@@ -2036,7 +2038,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
 
     -- Create dialog function
     local function createColorDialog()
-        -- Create dialog overlay
+        -- Create dialog overlay - FIXED: Added Active property and proper event handling
         local dialogOverlay = Instance.new("Frame")
         dialogOverlay.Name = "ColorPickerDialog"
         dialogOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -2044,6 +2046,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         dialogOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         dialogOverlay.BackgroundTransparency = 0.5
         dialogOverlay.ZIndex = 10000
+        dialogOverlay.Active = true -- IMPORTANT: This blocks input to elements behind
         dialogOverlay.Parent = Window.ScreenGui
 
         -- Dialog frame
@@ -2052,6 +2055,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         dialog.Position = UDim2.new(0.5, -215, 0.5, -165)
         dialog.BackgroundColor3 = theme.SectionBackground
         dialog.ZIndex = 10001
+        dialog.Active = true -- Also make dialog active
         dialog.Parent = dialogOverlay
 
         local dialogCorner = Instance.new("UICorner")
@@ -2081,6 +2085,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         satVibMap.Image = "rbxassetid://4155801252"
         satVibMap.BackgroundColor3 = Color3.fromHSV(workingH, 1, 1)
         satVibMap.ZIndex = 10002
+        satVibMap.Active = true
         satVibMap.Parent = dialog
 
         local mapCorner = Instance.new("UICorner")
@@ -2102,6 +2107,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         hueSlider.Size = UDim2.new(0, 12, 0, 190)
         hueSlider.Position = UDim2.new(0, 210, 0, 55)
         hueSlider.ZIndex = 10002
+        hueSlider.Active = true
         hueSlider.Parent = dialog
 
         local hueCorner = Instance.new("UICorner")
@@ -2177,7 +2183,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         newFrameCorner.CornerRadius = UDim.new(0, 4)
         newFrameCorner.Parent = newColorFrame
 
-        -- Input creation helper
+        -- FIXED: Input creation helper with corrected positioning
         local function createInput(pos, labelText, defaultValue)
             local inputFrame = Instance.new("Frame")
             inputFrame.Size = UDim2.new(0, 90, 0, 32)
@@ -2202,22 +2208,23 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             input.ZIndex = 10003
             input.Parent = inputFrame
 
+            -- FIXED: Position label relative to inputFrame, not dialog
             local label = Instance.new("TextLabel")
             label.Text = labelText
-            label.Size = UDim2.new(1, 0, 0, 32)
-            label.Position = UDim2.new(1, 10, 0, 0)
+            label.Size = UDim2.new(0, 30, 0, 32)  -- Fixed size
+            label.Position = UDim2.new(1, 5, 0, 0)  -- Position relative to inputFrame
             label.BackgroundTransparency = 1
             label.TextColor3 = theme.Text
             label.Font = Enum.Font.Gotham
             label.TextSize = 13
             label.TextXAlignment = Enum.TextXAlignment.Left
             label.ZIndex = 10002
-            label.Parent = dialog
+            label.Parent = inputFrame  -- IMPORTANT: Parent to inputFrame, not dialog
 
             return input
         end
 
-        -- Create inputs
+        -- Create inputs with proper positioning
         local hexInput = createInput(UDim2.new(0, 240, 0, 55), "Hex", "#" .. Color3.fromHSV(workingH, workingS, workingV):ToHex())
         local redInput = createInput(UDim2.new(0, 240, 0, 95), "Red", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).r * 255)))
         local greenInput = createInput(UDim2.new(0, 240, 0, 135), "Green", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).g * 255)))
@@ -2367,7 +2374,12 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
             closeDialog()
         end)
 
-        -- Close on outside click
+        -- FIXED: Prevent dialog from closing when clicking inside it
+        dialog.MouseButton1Click:Connect(function()
+            -- Do nothing - this prevents the click from bubbling to the overlay
+        end)
+
+        -- Close on outside click (overlay only)
         dialogOverlay.MouseButton1Click:Connect(function()
             closeDialog()
         end)
