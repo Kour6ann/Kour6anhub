@@ -1987,40 +1987,27 @@ function SectionObj:NewDropdown(name, options, callback)
     }
 end
 
-function SectionObj:NewColorpicker(name, defaultColor, callback)
-    -- Normalize color input
-    local function normalizeColor(c)
-        if typeof(c) == "Color3" then return c end
-        if type(c) == "table" then
-            local r = math.clamp((c[1] or c.R or c.r or 0), 0, 1)
-            local g = math.clamp((c[2] or c.G or c.g or 0), 0, 1)
-            local b = math.clamp((c[3] or c.B or c.b or 0), 0, 1)
-            if r > 1 or g > 1 or b > 1 then
-                r, g, b = r/255, g/255, b/255
-            end
-            return Color3.new(r, g, b)
-        end
-        return Color3.fromRGB(255, 120, 0) -- Default fallback
-    end
-
-    local currentColor = normalizeColor(defaultColor)
+ffunction SectionObj:NewColorpicker(name, defaultColor, callback)
+    local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local isOpen = false
     local connections = {}
     
-    -- Clean up function
-    local function cleanup()
-        for _, conn in ipairs(connections) do
-            pcall(function() conn:Disconnect() end)
-        end
-        connections = {}
+    -- Convert RGB to HSV
+    local function RGBtoHSV(color)
+        return Color3.toHSV(color)
+    end
+    
+    -- Convert HSV to RGB
+    local function HSVtoRGB(h, s, v)
+        return Color3.fromHSV(h, s, v)
     end
 
     -- Main container
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, 34)
     container.BackgroundTransparency = 1
-    container.Parent = Section
     container.ClipsDescendants = true
+    container.Parent = Section
 
     -- Main button
     local button = Instance.new("TextButton")
@@ -2063,12 +2050,13 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     -- Popup frame
     local popup = Instance.new("Frame")
     popup.Name = "_ColorPickerPopup"
-    popup.Size = UDim2.new(1, 0, 0, 150) -- Fixed height
+    popup.Size = UDim2.new(1, 0, 0, 200)
     popup.Position = UDim2.new(0, 0, 1, 4)
     popup.BackgroundColor3 = theme.SectionBackground
     popup.BorderSizePixel = 0
     popup.Visible = false
     popup.ZIndex = 100
+    popup.ClipsDescendants = true
     popup.Parent = container
 
     local popupCorner = Instance.new("UICorner")
@@ -2081,224 +2069,299 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     popupStroke.Transparency = 0.3
     popupStroke.Parent = popup
 
-    -- Title
-    local title = Instance.new("TextLabel")
-    title.Text = name or "Color Picker"
-    title.Size = UDim2.new(1, -8, 0, 20)
-    title.Position = UDim2.new(0, 8, 0, 4)
-    title.BackgroundTransparency = 1
-    title.TextColor3 = theme.Text
-    title.Font = Enum.Font.GothamBold
-    title.TextSize = 12
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = popup
+    -- Saturation-Value Map (like in the example)
+    local satVibMap = Instance.new("ImageLabel")
+    satVibMap.Size = UDim2.new(0, 150, 0, 150)
+    satVibMap.Position = UDim2.new(0, 10, 0, 10)
+    satVibMap.Image = "rbxassetid://4155801252" -- White to color gradient
+    satVibMap.BackgroundColor3 = currentColor
+    satVibMap.BorderSizePixel = 0
+    satVibMap.Parent = popup
 
-    -- RGB Input fields with better layout
-    local inputs = {}
-    local labels = {"R", "G", "B"}
-    local values = {math.floor(currentColor.R * 255), math.floor(currentColor.G * 255), math.floor(currentColor.B * 255)}
+    local mapCorner = Instance.new("UICorner")
+    mapCorner.CornerRadius = UDim.new(0, 4)
+    mapCorner.Parent = satVibMap
 
+    -- Saturation-Value cursor
+    local satVibCursor = Instance.new("ImageLabel")
+    satVibCursor.Size = UDim2.new(0, 18, 0, 18)
+    satVibCursor.Image = "http://www.roblox.com/asset/?id=4805639000"
+    satVibCursor.BackgroundTransparency = 1
+    satVibCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+    satVibCursor.Parent = satVibMap
+
+    -- Hue slider background
+    local hueSliderBg = Instance.new("Frame")
+    hueSliderBg.Size = UDim2.new(0, 20, 0, 150)
+    hueSliderBg.Position = UDim2.new(0, 170, 0, 10)
+    hueSliderBg.BorderSizePixel = 0
+    hueSliderBg.Parent = popup
+
+    local hueCorner = Instance.new("UICorner")
+    hueCorner.CornerRadius = UDim.new(0, 4)
+    hueCorner.Parent = hueSliderBg
+
+    -- Create hue gradient
+    local hueGradient = Instance.new("UIGradient")
+    hueGradient.Rotation = 90
+    
+    -- Create color sequence for hue slider
+    local colorSequence = {}
+    for i = 0, 1, 0.1 do
+        table.insert(colorSequence, ColorSequenceKeypoint.new(i, Color3.fromHSV(i, 1, 1)))
+    end
+    hueGradient.Color = ColorSequence.new(colorSequence)
+    hueGradient.Parent = hueSliderBg
+
+    -- Hue slider cursor
+    local hueCursor = Instance.new("ImageLabel")
+    hueCursor.Size = UDim2.new(0, 24, 0, 12)
+    hueCursor.Image = "http://www.roblox.com/asset/?id=12266946128"
+    hueCursor.BackgroundTransparency = 1
+    hueCursor.AnchorPoint = Vector2.new(0.5, 0.5)
+    hueCursor.Parent = hueSliderBg
+
+    -- Current color display
+    local newColorDisplay = Instance.new("Frame")
+    newColorDisplay.Size = UDim2.new(0, 40, 0, 40)
+    newColorDisplay.Position = UDim2.new(0, 200, 0, 10)
+    newColorDisplay.BackgroundColor3 = currentColor
+    newColorDisplay.BorderSizePixel = 0
+    newColorDisplay.Parent = popup
+
+    local newColorCorner = Instance.new("UICorner")
+    newColorCorner.CornerRadius = UDim.new(0, 4)
+    newColorCorner.Parent = newColorDisplay
+
+    local newColorStroke = Instance.new("UIStroke")
+    newColorStroke.Color = Color3.fromRGB(100, 100, 100)
+    newColorStroke.Thickness = 1
+    newColorStroke.Parent = newColorDisplay
+
+    -- RGB inputs
+    local rgbInputs = {}
+    local rgbLabels = {"R", "G", "B"}
+    
     for i = 1, 3 do
-        local y = 30 + (i - 1) * 36
+        local yPos = 60 + (i - 1) * 25
         
         -- Label
         local label = Instance.new("TextLabel")
-        label.Text = labels[i] .. ":"
+        label.Text = rgbLabels[i] .. ":"
         label.Size = UDim2.new(0, 20, 0, 20)
-        label.Position = UDim2.new(0, 8, 0, y)
+        label.Position = UDim2.new(0, 200, 0, yPos)
         label.BackgroundTransparency = 1
         label.TextColor3 = theme.Text
         label.Font = Enum.Font.Gotham
-        label.TextSize = 11
+        label.TextSize = 12
         label.TextXAlignment = Enum.TextXAlignment.Left
         label.Parent = popup
-
-        -- Text input
+        
+        -- Input
         local input = Instance.new("TextBox")
-        input.Size = UDim2.new(0, 50, 0, 22)
-        input.Position = UDim2.new(0, 30, 0, y)
+        input.Size = UDim2.new(0, 50, 0, 20)
+        input.Position = UDim2.new(0, 225, 0, yPos)
         input.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
         input.TextColor3 = theme.Text
         input.Font = Enum.Font.Gotham
-        input.TextSize = 11
-        input.Text = tostring(values[i])
+        input.TextSize = 12
+        input.Text = tostring(math.floor(currentColor.r * 255))
         input.ClearTextOnFocus = false
         input.Parent = popup
-
+        
         local inputCorner = Instance.new("UICorner")
         inputCorner.CornerRadius = UDim.new(0, 4)
         inputCorner.Parent = input
-
+        
         local inputPadding = Instance.new("UIPadding")
         inputPadding.PaddingLeft = UDim.new(0, 4)
         inputPadding.PaddingRight = UDim.new(0, 4)
         inputPadding.Parent = input
-
-        -- Slider background
-        local sliderBg = Instance.new("Frame")
-        sliderBg.Size = UDim2.new(0, 120, 0, 12)
-        sliderBg.Position = UDim2.new(0, 90, 0, y + 5)
-        sliderBg.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
-        sliderBg.BorderSizePixel = 0
-        sliderBg.Parent = popup
-
-        local sliderCorner = Instance.new("UICorner")
-        sliderCorner.CornerRadius = UDim.new(0, 6)
-        sliderCorner.Parent = sliderBg
-
-        -- Slider fill
-        local sliderFill = Instance.new("Frame")
-        sliderFill.Size = UDim2.new(values[i] / 255, 0, 1, 0)
-        sliderFill.BackgroundColor3 = Color3.new(values[1] / 255, i == 1 and values[2] / 255 or 0, i == 1 and values[3] / 255 or 0)
-        if i == 2 then sliderFill.BackgroundColor3 = Color3.new(0, values[2] / 255, 0) end
-        if i == 3 then sliderFill.BackgroundColor3 = Color3.new(0, 0, values[3] / 255) end
-        sliderFill.BorderSizePixel = 0
-        sliderFill.ZIndex = 2
-        sliderFill.Parent = sliderBg
-
-        local fillCorner = Instance.new("UICorner")
-        fillCorner.CornerRadius = UDim.new(0, 6)
-        fillCorner.Parent = sliderFill
-
-        -- Slider knob
-        local sliderKnob = Instance.new("Frame")
-        sliderKnob.Size = UDim2.new(0, 16, 0, 16)
-        sliderKnob.Position = UDim2.new(values[i] / 255, -8, 0.5, -8)
-        sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        sliderKnob.BorderSizePixel = 0
-        sliderKnob.ZIndex = 3
-        sliderKnob.Parent = sliderBg
-
-        local knobCorner = Instance.new("UICorner")
-        knobCorner.CornerRadius = UDim.new(1, 0)
-        knobCorner.Parent = sliderKnob
-
-        local knobStroke = Instance.new("UIStroke")
-        knobStroke.Color = theme.Accent
-        knobStroke.Thickness = 2
-        knobStroke.Parent = sliderKnob
-
-        inputs[i] = {
-            input = input,
-            sliderBg = sliderBg,
-            sliderFill = sliderFill,
-            sliderKnob = sliderKnob,
-            value = values[i]
-        }
+        
+        rgbInputs[i] = input
     end
 
-    -- Color preview in popup
-    local popupPreview = Instance.new("Frame")
-    popupPreview.Size = UDim2.new(0, 40, 0, 40)
-    popupPreview.Position = UDim2.new(1, -48, 0, 30)
-    popupPreview.BackgroundColor3 = currentColor
-    popupPreview.BorderSizePixel = 0
-    popupPreview.Parent = popup
+    -- Hex input
+    local hexLabel = Instance.new("TextLabel")
+    hexLabel.Text = "Hex:"
+    hexLabel.Size = UDim2.new(0, 30, 0, 20)
+    hexLabel.Position = UDim2.new(0, 200, 0, 135)
+    hexLabel.BackgroundTransparency = 1
+    hexLabel.TextColor3 = theme.Text
+    hexLabel.Font = Enum.Font.Gotham
+    hexLabel.TextSize = 12
+    hexLabel.TextXAlignment = Enum.TextXAlignment.Left
+    hexLabel.Parent = popup
 
-    local popupPreviewCorner = Instance.new("UICorner")
-    popupPreviewCorner.CornerRadius = UDim.new(0, 6)
-    popupPreviewCorner.Parent = popupPreview
+    local hexInput = Instance.new("TextBox")
+    hexInput.Size = UDim2.new(0, 70, 0, 20)
+    hexInput.Position = UDim2.new(0, 235, 0, 135)
+    hexInput.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
+    hexInput.TextColor3 = theme.Text
+    hexInput.Font = Enum.Font.Gotham
+    hexInput.TextSize = 12
+    hexInput.Text = currentColor:ToHex()
+    hexInput.ClearTextOnFocus = false
+    hexInput.Parent = popup
 
-    local popupPreviewStroke = Instance.new("UIStroke")
-    popupPreviewStroke.Color = Color3.fromRGB(100, 100, 100)
-    popupPreviewStroke.Thickness = 1
-    popupPreviewStroke.Parent = popupPreview
+    local hexCorner = Instance.new("UICorner")
+    hexCorner.CornerRadius = UDim.new(0, 4)
+    hexCorner.Parent = hexInput
 
-    -- Update color function
-    local function updateColor()
-        local r = math.clamp(inputs[1].value, 0, 255) / 255
-        local g = math.clamp(inputs[2].value, 0, 255) / 255
-        local b = math.clamp(inputs[3].value, 0, 255) / 255
-        
-        currentColor = Color3.new(r, g, b)
+    local hexPadding = Instance.new("UIPadding")
+    hexPadding.PaddingLeft = UDim.new(0, 4)
+    hexPadding.PaddingRight = UDim.new(0, 4)
+    hexPadding.Parent = hexInput
+
+    -- Current HSV values
+    local currentH, currentS, currentV = RGBtoHSV(currentColor)
+
+    -- Update all displays
+    local function updateDisplays()
         preview.BackgroundColor3 = currentColor
-        popupPreview.BackgroundColor3 = currentColor
+        newColorDisplay.BackgroundColor3 = currentColor
+        satVibMap.BackgroundColor3 = HSVtoRGB(currentH, 1, 1)
         
-        -- Update slider fill colors
-        inputs[1].sliderFill.BackgroundColor3 = Color3.new(r, g, b)
-        inputs[2].sliderFill.BackgroundColor3 = Color3.new(0, g, 0)
-        inputs[3].sliderFill.BackgroundColor3 = Color3.new(0, 0, b)
+        -- Update cursor positions
+        satVibCursor.Position = UDim2.new(currentS, 0, 1 - currentV, 0)
+        hueCursor.Position = UDim2.new(0.5, 0, currentH, -6)
+        
+        -- Update RGB inputs
+        local r, g, b = math.floor(currentColor.r * 255), math.floor(currentColor.g * 255), math.floor(currentColor.b * 255)
+        rgbInputs[1].Text = tostring(r)
+        rgbInputs[2].Text = tostring(g)
+        rgbInputs[3].Text = tostring(b)
+        
+        -- Update hex
+        hexInput.Text = currentColor:ToHex()
+    end
+
+    -- Update color from HSV
+    local function updateColorFromHSV()
+        currentColor = HSVtoRGB(currentH, currentS, currentV)
+        updateDisplays()
         
         if callback and type(callback) == "function" then
             safeCallback(callback, currentColor)
         end
     end
 
-    -- Update slider position and fill
-    local function updateSlider(i, value)
-        value = math.clamp(value, 0, 255)
-        inputs[i].value = value
-        inputs[i].input.Text = tostring(value)
+    -- Update color from RGB
+    local function updateColorFromRGB()
+        local r = tonumber(rgbInputs[1].Text) or 0
+        local g = tonumber(rgbInputs[2].Text) or 0
+        local b = tonumber(rgbInputs[3].Text) or 0
         
-        local relPos = value / 255
-        inputs[i].sliderFill.Size = UDim2.new(relPos, 0, 1, 0)
-        inputs[i].sliderKnob.Position = UDim2.new(relPos, -8, 0.5, -8)
-    end
-
-    -- Setup input handlers
-    for i = 1, 3 do
-        local data = inputs[i]
+        r = math.clamp(r, 0, 255) / 255
+        g = math.clamp(g, 0, 255) / 255
+        b = math.clamp(b, 0, 255) / 255
         
-        -- Text input handler
-        local inputConn = data.input.FocusLost:Connect(function(enterPressed)
-            local value = tonumber(data.input.Text)
-            if value then
-                updateSlider(i, value)
-                updateColor()
-            else
-                data.input.Text = tostring(data.value)
-            end
-        end)
-        table.insert(connections, inputConn)
-
-        -- Slider handler
-        local dragging = false
+        currentColor = Color3.new(r, g, b)
+        currentH, currentS, currentV = RGBtoHSV(currentColor)
+        updateDisplays()
         
-        local function updateFromMouse(input)
-            local relativeX = input.Position.X - data.sliderBg.AbsolutePosition.X
-            local value = math.clamp(relativeX / data.sliderBg.AbsoluteSize.X, 0, 1) * 255
-            updateSlider(i, value)
-            updateColor()
+        if callback and type(callback) == "function" then
+            safeCallback(callback, currentColor)
         end
-
-        local beganConn = data.sliderBg.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = true
-                updateFromMouse(input)
-                tween(data.sliderKnob, {Size = UDim2.new(0, 20, 0, 20)}, {duration = 0.1})
-            end
-        end)
-        table.insert(connections, beganConn)
-
-        local movedConn = UserInputService.InputChanged:Connect(function(input)
-            if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
-                updateFromMouse(input)
-            end
-        end)
-        table.insert(connections, movedConn)
-
-        local endedConn = UserInputService.InputEnded:Connect(function(input)
-            if dragging and input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = false
-                tween(data.sliderKnob, {Size = UDim2.new(0, 16, 0, 16)}, {duration = 0.1})
-            end
-        end)
-        table.insert(connections, endedConn)
-
-        -- Hover effects for slider
-        debouncedHover(data.sliderBg,
-            function()
-                if not dragging then
-                    tween(data.sliderKnob, {Size = UDim2.new(0, 18, 0, 18)}, {duration = 0.1})
-                end
-            end,
-            function()
-                if not dragging then
-                    tween(data.sliderKnob, {Size = UDim2.new(0, 16, 0, 16)}, {duration = 0.1})
-                end
-            end
-        )
     end
+
+    -- Update color from hex
+    local function updateColorFromHex()
+        local hex = hexInput.Text:gsub("#", "")
+        if #hex == 6 then
+            local success, color = pcall(function()
+                return Color3.fromHex(hex)
+            end)
+            if success then
+                currentColor = color
+                currentH, currentS, currentV = RGBtoHSV(currentColor)
+                updateDisplays()
+                
+                if callback and type(callback) == "function" then
+                    safeCallback(callback, currentColor)
+                end
+            end
+        end
+    end
+
+    -- Saturation-Value map interaction
+    local satVibDragging = false
+    local satVibConn = satVibMap.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            satVibDragging = true
+        end
+    end)
+    table.insert(connections, satVibConn)
+
+    local satVibMoveConn = UserInputService.InputChanged:Connect(function(input)
+        if satVibDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mousePos = input.Position
+            local mapPos = satVibMap.AbsolutePosition
+            local mapSize = satVibMap.AbsoluteSize
+            
+            local relX = (mousePos.X - mapPos.X) / mapSize.X
+            local relY = (mousePos.Y - mapPos.Y) / mapSize.Y
+            
+            currentS = math.clamp(relX, 0, 1)
+            currentV = math.clamp(1 - relY, 0, 1)
+            updateColorFromHSV()
+        end
+    end)
+    table.insert(connections, satVibMoveConn)
+
+    local satVibEndConn = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            satVibDragging = false
+        end
+    end)
+    table.insert(connections, satVibEndConn)
+
+    -- Hue slider interaction
+    local hueDragging = false
+    local hueConn = hueSliderBg.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            hueDragging = true
+        end
+    end)
+    table.insert(connections, hueConn)
+
+    local hueMoveConn = UserInputService.InputChanged:Connect(function(input)
+        if hueDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local mousePos = input.Position
+            local sliderPos = hueSliderBg.AbsolutePosition
+            local sliderSize = hueSliderBg.AbsoluteSize
+            
+            local relY = (mousePos.Y - sliderPos.Y) / sliderSize.Y
+            currentH = math.clamp(relY, 0, 1)
+            updateColorFromHSV()
+        end
+    end)
+    table.insert(connections, hueMoveConn)
+
+    local hueEndConn = UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            hueDragging = false
+        end
+    end)
+    table.insert(connections, hueEndConn)
+
+    -- RGB input handlers
+    for i, input in ipairs(rgbInputs) do
+        local conn = input.FocusLost:Connect(function(enterPressed)
+            if enterPressed then
+                updateColorFromRGB()
+            end
+        end)
+        table.insert(connections, conn)
+    end
+
+    -- Hex input handler
+    local hexConn = hexInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed then
+            updateColorFromHex()
+        end
+    end)
+    table.insert(connections, hexConn)
 
     -- Button hover effects
     debouncedHover(button,
@@ -2354,12 +2417,15 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         popup.BackgroundTransparency = 1
         
         tween(popup, {
-            Size = UDim2.new(1, 0, 0, 150),
+            Size = UDim2.new(1, 0, 0, 200),
             BackgroundTransparency = 0
         }, {duration = 0.15})
         
-        container.Size = UDim2.new(1, 0, 0, 34 + 154)
+        container.Size = UDim2.new(1, 0, 0, 34 + 204)
         Window._currentOpenDropdown = closePopup
+        
+        -- Update displays with current values
+        updateDisplays()
     end
 
     -- Button click handler
@@ -2388,6 +2454,14 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     end)
     table.insert(connections, outsideConn)
 
+    -- Cleanup function
+    local function cleanup()
+        for _, conn in ipairs(connections) do
+            pcall(function() conn:Disconnect() end)
+        end
+        connections = {}
+    end
+
     -- Cleanup on removal
     local ancestryConn = container.AncestryChanged:Connect(function()
         if not container.Parent then
@@ -2401,21 +2475,22 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         globalConnTracker:add(conn)
     end
 
+    -- Initial update
+    updateDisplays()
+
     return {
         Get = function()
             return currentColor
         end,
         Set = function(newColor)
-            local color = normalizeColor(newColor)
-            if color then
-                currentColor = color
-                local r, g, b = math.floor(color.R * 255), math.floor(color.G * 255), math.floor(color.B * 255)
+            if typeof(newColor) == "Color3" then
+                currentColor = newColor
+                currentH, currentS, currentV = RGBtoHSV(currentColor)
+                updateDisplays()
                 
-                updateSlider(1, r)
-                updateSlider(2, g)
-                updateSlider(3, b)
-                updateColor()
-                
+                if callback and type(callback) == "function" then
+                    safeCallback(callback, currentColor)
+                end
                 return true
             end
             return false
