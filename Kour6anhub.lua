@@ -1987,7 +1987,7 @@ function SectionObj:NewDropdown(name, options, callback)
     }
 end
 
-ffunction SectionObj:NewColorpicker(name, defaultColor, callback)
+function SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local isOpen = false
     local connections = {}
