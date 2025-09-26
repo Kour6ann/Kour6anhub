@@ -76,7 +76,7 @@ local function getArrowChar(direction)
     return success and unicode or fallback
 end
 
--- Tween creation helper (safe)
+-- Fixed Tween creation helper (safe)
 local function safeTweenCreate(obj, props, options)
     if not obj or not props then return nil end
     options = options or {}
@@ -95,10 +95,23 @@ local function safeTweenCreate(obj, props, options)
     -- Ensure we have a table for this object
     if not ActiveTweens[obj] then ActiveTweens[obj] = {} end
 
-    -- Cancel conflicting property tweens for that object
+    -- Cancel conflicting property tweens for that object (FIXED)
     for prop, tweenObj in pairs(ActiveTweens[obj]) do
-        if props[prop] ~= nil and tweenObj then
-            pcall(function() tweenObj:Cancel() end)
+        if props[prop] ~= nil then
+            -- Check if tweenObj exists and is still valid before calling Cancel
+            if tweenObj and typeof(tweenObj) == "Tween" then
+                local success = pcall(function() 
+                    -- Additional check: ensure the tween object still has its methods
+                    if tweenObj.Cancel then
+                        tweenObj:Cancel() 
+                    end
+                end)
+                if not success then
+                    -- If cancel failed, the tween is probably already destroyed
+                    warn("[Kour6anHub] Failed to cancel tween - object may be destroyed")
+                end
+            end
+            -- Always clear the reference, even if cancel failed
             ActiveTweens[obj][prop] = nil
         end
     end
@@ -107,30 +120,52 @@ local function safeTweenCreate(obj, props, options)
     local ok, t = pcall(function() return TweenService:Create(obj, ti, props) end)
     if not ok or not t then return nil end
 
+    -- Store the new tween references
     for prop in pairs(props) do
         ActiveTweens[obj][prop] = t
     end
     _tweenTimestamps[t] = tick()
 
-    -- Completed connection to cleanup tracked tweens
+    -- Completed connection to cleanup tracked tweens (IMPROVED)
     local conn
     conn = t.Completed:Connect(function()
-        -- safe cleanup: only attempt to touch ActiveTweens[obj] if present
-        if ActiveTweens[obj] then
-            for prop, tweenObj in pairs(ActiveTweens[obj]) do
-                if tweenObj == t then
-                    ActiveTweens[obj][prop] = nil
+        -- More robust cleanup with additional safety checks
+        pcall(function()
+            if ActiveTweens[obj] then
+                for prop, tweenObj in pairs(ActiveTweens[obj]) do
+                    if tweenObj == t then
+                        ActiveTweens[obj][prop] = nil
+                    end
+                end
+                -- Clean up empty tables
+                if next(ActiveTweens[obj]) == nil then
+                    ActiveTweens[obj] = nil
                 end
             end
-            if next(ActiveTweens[obj]) == nil then
-                ActiveTweens[obj] = nil
+            if conn then
+                conn:Disconnect()
+                conn = nil
             end
-        end
-        pcall(function() conn:Disconnect() end)
-        _tweenTimestamps[t] = nil
+            _tweenTimestamps[t] = nil
+        end)
     end)
 
-    t:Play()
+    -- Add additional safety: if tween fails to play, clean up immediately
+    local playSuccess = pcall(function() t:Play() end)
+    if not playSuccess then
+        -- Clean up failed tween
+        for prop in pairs(props) do
+            if ActiveTweens[obj] then
+                ActiveTweens[obj][prop] = nil
+            end
+        end
+        _tweenTimestamps[t] = nil
+        if conn then
+            pcall(function() conn:Disconnect() end)
+        end
+        return nil
+    end
+
     return t
 end
 
