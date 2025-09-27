@@ -1935,26 +1935,33 @@ function SectionObj:NewDropdown(name, options, callback)
 
    return {
     Set = function(value)
-        local stringValue = tostring(value)
-        for i, opt in ipairs(options) do
-            if tostring(opt) == stringValue then
-                current = opt
-                selectedIndex = i
-                btn.Text = (name and name .. ": " or "") .. stringValue
-                -- 🔽 trigger callback when Set is used
-                if callback and type(callback) == "function" then
-                    safeCallback(callback, current)
-                end
-                return true
-            end
-        end
-        current = stringValue
-        btn.Text = (name and name .. ": " or "") .. stringValue
-        if callback and type(callback) == "function" then
-            safeCallback(callback, current)
-        end
+    local stringValue = tostring(value)
+    
+    -- Ensure we're working with a valid string
+    if type(stringValue) ~= "string" or stringValue == "table" or string.find(stringValue, "table:") then
+        warn("[Kour6anHub] Invalid dropdown value:", value)
         return false
-    end,
+    end
+    
+    for i, opt in ipairs(options) do
+        if tostring(opt) == stringValue then
+            current = opt
+            selectedIndex = i
+            btn.Text = (name and name .. ": " or "") .. tostring(current)
+            
+            -- Only trigger callback with the string value, not the stored current
+            if callback and type(callback) == "function" then
+                safeCallback(callback, tostring(current))
+            end
+            return true
+        end
+    end
+    
+    -- If not found in options, set as string but don't trigger callback
+    current = stringValue
+    btn.Text = (name and name .. ": " or "") .. stringValue
+    return false
+end,,
     Get = function()
         return current
     end,
