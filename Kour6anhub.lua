@@ -1934,37 +1934,30 @@ function SectionObj:NewDropdown(name, options, callback)
     globalConnTracker:add(ancestryConn)
 
    return {
-    Set = function(value)
+Set = function(value)
     local stringValue = tostring(value)
-    
-    -- Ensure we're working with a valid string
-    if type(stringValue) ~= "string" or stringValue == "table" or string.find(stringValue, "table:") then
-        warn("[Kour6anHub] Invalid dropdown value:", value)
-        return false
-    end
-    
     for i, opt in ipairs(options) do
         if tostring(opt) == stringValue then
-            current = opt
+            current = stringValue  -- FIXED: store string, not original opt
             selectedIndex = i
-            btn.Text = (name and name .. ": " or "") .. tostring(current)
-            
-            -- Only trigger callback with the string value, not the stored current
+            btn.Text = (name and name .. ": " or "") .. stringValue
             if callback and type(callback) == "function" then
-                safeCallback(callback, tostring(current))
+                safeCallback(callback, stringValue)  -- FIXED: pass string, not current
             end
             return true
         end
     end
-    
-    -- If not found in options, set as string but don't trigger callback
     current = stringValue
     btn.Text = (name and name .. ": " or "") .. stringValue
+    if callback and type(callback) == "function" then
+        safeCallback(callback, stringValue)  -- FIXED: pass stringValue, not current
+    end
     return false
-end,,
-    Get = function()
-        return current
-    end,
+end,
+
+Get = function()
+    return current  -- Now always returns string
+end,
     SetOptions = function(newOptions)
             newOptions = newOptions or {}
             if type(newOptions) ~= "table" then
