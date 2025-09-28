@@ -418,7 +418,7 @@ if ScreenGui then
 end
 ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "Kour6anHub"
-ScreenGui.DisplayOrder = 999999999 -- Very high display order to stay on top
+ScreenGui.DisplayOrder = 999999999 + 10000 -- Very high display order to stay on top
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = GuiParent
     
@@ -428,6 +428,7 @@ ScreenGui.Parent = GuiParent
     Main.Position = UDim2.new(0.5, -300, 0.5, -200)
     Main.BackgroundColor3 = theme.Background
     Main.BorderSizePixel = 0
+    Main.Active = true
     Main.Parent = ScreenGui
 
     local MainCorner = Instance.new("UICorner")
