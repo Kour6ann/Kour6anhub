@@ -441,6 +441,7 @@ ScreenGui.Parent = GuiParent
 local Topbar = Instance.new("Frame")
 Topbar.Size = UDim2.new(1, 0, 0, 40)
 Topbar.BackgroundColor3 = theme.SectionBackground
+Topbar.Active = true
 Topbar.Parent = Main
 
 local TopbarCorner = Instance.new("UICorner")
@@ -510,6 +511,7 @@ CloseBtnCorner.Parent = CloseBtn
     TabContainer.Size = UDim2.new(0, 150, 1, -40)
     TabContainer.Position = UDim2.new(0, 0, 0, 40)
     TabContainer.BackgroundColor3 = theme.TabBackground
+    TabContainer.Active = true
     TabContainer.Parent = Main
 
     local TabContainerCorner = Instance.new("UICorner")
@@ -534,6 +536,7 @@ CloseBtnCorner.Parent = CloseBtn
     Content.Size = UDim2.new(1, -160, 1, -40)
     Content.Position = UDim2.new(0, 160, 0, 40)
     Content.BackgroundTransparency = 1
+    Content.Active = true
     Content.Parent = Main
 
     local Tabs = {}
