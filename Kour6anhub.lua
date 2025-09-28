@@ -418,7 +418,7 @@ if ScreenGui then
 end
 ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "Kour6anHub"
-ScreenGui.DisplayOrder = 999999999 + 10000 -- Very high display order to stay on top
+ScreenGui.DisplayOrder = 999999999 -- Very high display order to stay on top
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = GuiParent
     
