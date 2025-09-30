@@ -1,9 +1,5 @@
--- Kour6anHub - patched v8 (full file)
--- Patches/fixes applied:
--- 1) Fixed syntax issues and guarded unsafe table access.
--- 2) Consolidated debounce helper and removed duplicate definitions.
--- 3) Fixed invalid concatenation and repaired incomplete Completed handlers.
--- 4) Preserved features: themes, tabs, notifications, colorpickers, dropdowns, etc.
+-- Kour6anHub - patched v8
+
 
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
