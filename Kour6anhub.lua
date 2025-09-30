@@ -1,6 +1,5 @@
 -- Kour6anHub - patched v8
 
-
 local Kour6anHub = {}
 Kour6anHub.__index = Kour6anHub
 
