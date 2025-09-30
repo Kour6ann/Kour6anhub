@@ -2077,7 +2077,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     local dialog = Instance.new("Frame")
     dialog.Size = UDim2.new(0, 430, 0, 330)
     dialog.Position = UDim2.new(0.5, -215, 0.5, -165)
-    dialog.BackgroundColor3 = theme.SectionBackground
+    dialog.BackgroundColor3 = theme.SectionBackground or Color3.fromRGB(30, 30, 30)  -- FIXED
     dialog.ZIndex = 2
     dialog.Active = true -- Also make dialog active
     dialog.Parent = dialogOverlay
@@ -2212,7 +2212,7 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         local inputFrame = Instance.new("Frame")
         inputFrame.Size = UDim2.new(0, 90, 0, 32)
         inputFrame.Position = pos
-        inputFrame.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground
+        inputFrame.BackgroundColor3 = theme.InputBackground or theme.ButtonBackground or theme.SectionBackground or Color3.fromRGB(40, 40, 40)
         inputFrame.ZIndex = 3
         inputFrame.Parent = dialog
 
@@ -2245,8 +2245,8 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
         label.Parent = inputFrame
 
         return input
-    end
-
+    end                 
+                    
     -- Create inputs
     local hexInput = createInput(UDim2.new(0, 240, 0, 55), "Hex", "#" .. Color3.fromHSV(workingH, workingS, workingV):ToHex())
     local redInput = createInput(UDim2.new(0, 240, 0, 95), "Red", tostring(math.floor(Color3.fromHSV(workingH, workingS, workingV).r * 255)))
