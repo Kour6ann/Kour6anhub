@@ -2041,13 +2041,26 @@ function SectionObj:NewColorpicker(name, defaultColor, callback)
     previewCorner.Parent = preview
 
    local function createColorDialog()
-    -- Create a separate ScreenGui for the color picker with maximum display order
+    -- Get the proper parent (CoreGui or PlayerGui)
+    local guiParent = game:GetService("CoreGui")
+    local success, playerGui = pcall(function()
+        local plr = game:GetService("Players").LocalPlayer
+        if plr and plr:FindFirstChild("PlayerGui") then
+            return plr.PlayerGui
+        end
+    end)
+    if success and playerGui then 
+        guiParent = playerGui 
+    end
+    
+    -- Create a separate ScreenGui for the color picker
     local colorPickerGui = Instance.new("ScreenGui")
     colorPickerGui.Name = "ColorPickerOverlay"
-    colorPickerGui.DisplayOrder = 999999999 + 1000 -- Higher than your main UI
+    colorPickerGui.DisplayOrder = 1000000000 -- Even higher
     colorPickerGui.ResetOnSpawn = false
-    colorPickerGui.IgnoreGuiInset = true -- This helps with mobile/console compatibility
-    colorPickerGui.Parent = Window.ScreenGui.Parent -- Same parent as your main ScreenGui
+    colorPickerGui.IgnoreGuiInset = true
+    colorPickerGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling -- Important!
+    colorPickerGui.Parent = guiParent
 
     -- Create dialog overlay - now parented to the separate ScreenGui
     local dialogOverlay = Instance.new("Frame")
