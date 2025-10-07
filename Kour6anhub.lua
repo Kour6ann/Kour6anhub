@@ -236,21 +236,30 @@ local function debouncedHover(obj, enterFunc, leaveFunc)
     end)
 end
 
--- Dragging helper with tracked connections
+-- Dragging helper with tracked connections (MOBILE COMPATIBLE)
 local function makeDraggable(frame, dragHandle)
     local connTracker = makeConnectionTracker()
-    local dragging, dragStart, startPos
+    local dragging = false
+    local dragInput
+    local dragStart
+    local startPos
     dragHandle = dragHandle or frame
 
+    -- Input began handler (supports both mouse and touch)
     local ibConn = dragHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
             dragging = true
+            dragInput = input
             dragStart = input.Position
             startPos = frame.Position
+            
+            -- Track when input ends
             local changedConn
             changedConn = input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
                     dragging = false
+                    dragInput = nil
                     pcall(function() changedConn:Disconnect() end)
                 end
             end)
@@ -259,15 +268,43 @@ local function makeDraggable(frame, dragHandle)
     end)
     connTracker:add(ibConn)
 
+    -- Input changed handler (supports both mouse movement and touch)
     local imConn = UserInputService.InputChanged:Connect(function(input)
-        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        if not dragging then return end
+        
+        -- Handle both mouse movement and touch movement
+        if input.UserInputType == Enum.UserInputType.MouseMovement or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            
+            -- For touch, only update if it's the same touch that started dragging
+            if input.UserInputType == Enum.UserInputType.Touch and input ~= dragInput then
+                return
+            end
+            
             local delta = input.Position - dragStart
             pcall(function()
-                frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+                frame.Position = UDim2.new(
+                    startPos.X.Scale, 
+                    startPos.X.Offset + delta.X, 
+                    startPos.Y.Scale, 
+                    startPos.Y.Offset + delta.Y
+                )
             end)
         end
     end)
     connTracker:add(imConn)
+    
+    -- Additional safety: handle input ended globally (for touch)
+    local ieConn = UserInputService.InputEnded:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseButton1 or 
+                        input.UserInputType == Enum.UserInputType.Touch) then
+            if input == dragInput or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+                dragInput = nil
+            end
+        end
+    end)
+    connTracker:add(ieConn)
 
     return {
         disconnect = function()
