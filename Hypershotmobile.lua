@@ -814,7 +814,7 @@ if workspace:FindFirstChild("Mobs") then
         end
     end)
     
-    workspace.Mobs.ChildRemoving:Connect(function(mob)
+    workspace.Mobs.ChildRemoved:Connect(function(mob)
         if mob:FindFirstChild("MobileESP") then
             mob.MobileESP:Destroy()
         end
