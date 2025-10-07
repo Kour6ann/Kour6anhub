@@ -139,24 +139,48 @@ Circle.Visible = false
 
 client.getentities = function()
     local models = {}
-    for i,v in next, workspace.Mobs:GetChildren() do
-        table.insert(models, v)
-    end
-    for i,v in ipairs(workspace:GetChildren()) do
-        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= game.Players.LocalPlayer.Character then
-            table.insert(models, v)
+    
+    -- Get NPCs/Mobs
+    if workspace:FindFirstChild("Mobs") then
+        for i,v in next, workspace.Mobs:GetChildren() do
+            if v:IsA("Model") and v:FindFirstChild("Humanoid") then
+                table.insert(models, v)
+            end
         end
     end
+    
+    -- Get Players
+    for i,v in ipairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character then
+            table.insert(models, v.Character)
+        end
+    end
+    
     return models
 end
 
 local function isEnemy(character)
+    if not character or not character.Parent then return false end
+    if character == LocalPlayer.Character then return false end
+    
+    -- Check if it has humanoid and is alive
+    local humanoid = character:FindFirstChild("Humanoid") or character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end
+    
+    -- If team check is disabled, all are enemies
     if not sharedConfig.teamCheck then return true end
+    
+    -- Check for EnemyHighlight (means it's an enemy)
     local enemyHighlight = character:FindFirstChild("EnemyHighlight", true)
-    if not enemyHighlight then return false end
-    local playerOutline = character:FindFirstChild("PlayerOutline", true)
-    if playerOutline then return false end
-    return true
+    if enemyHighlight then
+        -- Make sure it's not a friendly (no PlayerOutline)
+        local playerOutline = character:FindFirstChild("PlayerOutline", true)
+        if not playerOutline then
+            return true
+        end
+    end
+    
+    return false
 end
 
 client.getNearestToTouch = function()
@@ -165,16 +189,20 @@ client.getNearestToTouch = function()
     
     local closestPart = nil
     local shortestDist = config.aimradius
+    local entities = client.getentities()
     
-    for i,v in next, client.getentities() do
+    for i,v in next, entities do
         if not isEnemy(v) then continue end
         
         local targetPart = nil
+        
+        -- Try to find the target part
         if config.targetPart == "Head" then
             targetPart = v:FindFirstChild("Head")
         elseif config.targetPart == "FakeHRP" then
             targetPart = v:FindFirstChild("FakeHRP")
         else
+            -- Auto mode - try both
             local head = v:FindFirstChild("Head")
             local fakeHRP = v:FindFirstChild("FakeHRP")
             if head and fakeHRP then
@@ -182,6 +210,11 @@ client.getNearestToTouch = function()
             else
                 targetPart = head or fakeHRP
             end
+        end
+        
+        -- Fallback to HumanoidRootPart if target part not found
+        if not targetPart then
+            targetPart = v:FindFirstChild("HumanoidRootPart")
         end
         
         if targetPart then
@@ -195,6 +228,7 @@ client.getNearestToTouch = function()
             end
         end
     end
+    
     return closestPart
 end
 
@@ -228,6 +262,27 @@ end)
 
 AutoAimSection:NewLabel("📱 Automatically aims when you shoot!")
 AutoAimSection:NewLabel("📌 Just touch to shoot - auto-aims!")
+
+AutoAimSection:NewButton("🔍 Test Auto Aim", "Check if NPCs are detected", function()
+    local entities = client.getentities()
+    local enemyCount = 0
+    local npcCount = 0
+    local playerCount = 0
+    
+    for _, entity in ipairs(entities) do
+        if isEnemy(entity) then
+            enemyCount = enemyCount + 1
+            if entity.Parent == workspace.Mobs then
+                npcCount = npcCount + 1
+            else
+                playerCount = playerCount + 1
+            end
+        end
+    end
+    
+    Window:Notify("Auto Aim Debug", 
+        string.format("Enemies: %d (NPCs: %d, Players: %d)", enemyCount, npcCount, playerCount), 4)
+end)
 
 ----------------------------------------------------------------
 -- TOUCH AIMLOCK SECTION
@@ -717,9 +772,71 @@ local function applyESP()
     end
 end
 
+-- Handle player respawns
+local function setupPlayerESP(player)
+    if player == LocalPlayer then return end
+    
+    -- Apply ESP to current character
+    if player.Character then
+        createESP(player.Character)
+    end
+    
+    -- Apply ESP when character respawns
+    player.CharacterAdded:Connect(function(character)
+        task.wait(0.5) -- Wait for character to fully load
+        if ESPEnabled then
+            createESP(character)
+        end
+    end)
+end
+
+-- Handle new players joining
+Players.PlayerAdded:Connect(function(player)
+    task.wait(1) -- Wait for player to fully load
+    if ESPEnabled then
+        setupPlayerESP(player)
+    end
+end)
+
+-- Handle player leaving (cleanup)
+Players.PlayerRemoving:Connect(function(player)
+    if player.Character and player.Character:FindFirstChild("MobileESP") then
+        player.Character.MobileESP:Destroy()
+    end
+end)
+
+-- Handle Mobs spawning
+if workspace:FindFirstChild("Mobs") then
+    workspace.Mobs.ChildAdded:Connect(function(mob)
+        task.wait(0.3) -- Wait for mob to fully load
+        if ESPEnabled then
+            createESP(mob)
+        end
+    end)
+    
+    workspace.Mobs.ChildRemoving:Connect(function(mob)
+        if mob:FindFirstChild("MobileESP") then
+            mob.MobileESP:Destroy()
+        end
+    end)
+end
+
+-- Setup ESP for existing players
+for _, player in pairs(Players:GetPlayers()) do
+    setupPlayerESP(player)
+end
+
 ESPSection:NewToggle("Enable ESP", "Show enemy info", function(state)
     ESPEnabled = state
-    if state then applyESP() else clearESP() end
+    if state then 
+        applyESP()
+        -- Setup listeners for all existing players
+        for _, player in pairs(Players:GetPlayers()) do
+            setupPlayerESP(player)
+        end
+    else 
+        clearESP() 
+    end
     Window:Notify("ESP", state and "Enabled" or "Disabled", 2)
 end)
 
@@ -733,6 +850,14 @@ end)
 
 ESPSection:NewLabel("📱 Lightweight for mobile!")
 ESPSection:NewLabel("📌 Shows name + distance only")
+
+-- Local player respawn handler
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    if ESPEnabled then
+        applyESP()
+    end
+end)
 
 ----------------------------------------------------------------
 -- PLAYERS TAB (Mobile Movement)
