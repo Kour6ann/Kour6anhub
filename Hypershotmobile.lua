@@ -116,21 +116,11 @@ local AutoAimSection = AimingTab:NewSection("🎯 Auto Aim (Touch)")
 local MainESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/alohabeach/Main/refs/heads/master/utils/esp/source.lua"))()
 
 local client = {
-    gameui = nil;
+    gameui = require(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("GameUI"):WaitForChild("GameUIMod"));
     oldfunction = {};
 }
 
--- Try to get gameui safely
-local success, result = pcall(function()
-    return require(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("GameUI"):WaitForChild("GameUIMod"))
-end)
-
-if success and result then
-    client.gameui = result
-    client.oldfunction.GetMousePos = clonefunction(client.gameui.GetMousePos)
-else
-    warn("Failed to load GameUI module - Silent Aim may not work")
-end
+client.oldfunction.GetMousePos = clonefunction(client.gameui.GetMousePos)
 
 local config = {
     autoaimenabled = false;
@@ -149,117 +139,73 @@ Circle.Visible = false
 
 client.getentities = function()
     local models = {}
-    
-    -- Get NPCs/Mobs
+    -- Get Mobs/NPCs
     if workspace:FindFirstChild("Mobs") then
         for i,v in next, workspace.Mobs:GetChildren() do
-            if v:IsA("Model") and v:FindFirstChild("Humanoid") then
-                table.insert(models, v)
-            end
+            table.insert(models, v)
         end
     end
-    
-    -- Get Players
-    for i,v in ipairs(Players:GetPlayers()) do
-        if v ~= LocalPlayer and v.Character then
-            table.insert(models, v.Character)
+    -- Get Players from workspace
+    for i,v in ipairs(workspace:GetChildren()) do
+        if v:IsA("Model") and v:FindFirstChild("Humanoid") and v ~= LocalPlayer.Character then
+            table.insert(models, v)
         end
     end
-    
     return models
 end
 
 local function isEnemy(character)
-    if not character or not character.Parent then return false end
-    if character == LocalPlayer.Character then return false end
-    
-    -- Check if it has humanoid and is alive
-    local humanoid = character:FindFirstChild("Humanoid") or character:FindFirstChildOfClass("Humanoid")
-    if not humanoid or humanoid.Health <= 0 then return false end
-    
-    -- If team check is disabled, all are enemies
     if not sharedConfig.teamCheck then return true end
-    
-    -- Check for EnemyHighlight (means it's an enemy)
     local enemyHighlight = character:FindFirstChild("EnemyHighlight", true)
-    if enemyHighlight then
-        -- Make sure it's not a friendly (no PlayerOutline)
-        local playerOutline = character:FindFirstChild("PlayerOutline", true)
-        if not playerOutline then
-            return true
-        end
-    end
-    
-    return false
+    if not enemyHighlight then return false end
+    local playerOutline = character:FindFirstChild("PlayerOutline", true)
+    if playerOutline then return false end
+    return true
 end
 
 client.getNearestToTouch = function()
-    if not config.autoaimenabled then return nil end
-    
     local touchPos = getTouchPosition()
-    if touchPos.Magnitude == 0 then 
-        -- Return nil if no touch, let game handle normally
-        return nil
-    end
-    
     local closestPart = nil
     local shortestDist = config.aimradius
-    local entities = client.getentities()
     
-    for i,v in next, entities do
-        pcall(function()
-            if not isEnemy(v) then return end
-            
-            local targetPart = nil
-            
-            -- Try to find the target part
-            if config.targetPart == "Head" then
-                targetPart = v:FindFirstChild("Head")
-            elseif config.targetPart == "FakeHRP" then
-                targetPart = v:FindFirstChild("FakeHRP")
+    for i,v in next, client.getentities() do
+        if not isEnemy(v) then continue end
+        
+        local targetPart = nil
+        if config.targetPart == "Head" then
+            targetPart = v:FindFirstChild("Head")
+        elseif config.targetPart == "FakeHRP" then
+            targetPart = v:FindFirstChild("FakeHRP")
+        else
+            local head = v:FindFirstChild("Head")
+            local fakeHRP = v:FindFirstChild("FakeHRP")
+            if head and fakeHRP then
+                targetPart = math.random(1, 2) == 1 and head or fakeHRP
             else
-                -- Auto mode - try both
-                local head = v:FindFirstChild("Head")
-                local fakeHRP = v:FindFirstChild("FakeHRP")
-                if head and fakeHRP then
-                    targetPart = math.random(1, 2) == 1 and head or fakeHRP
-                else
-                    targetPart = head or fakeHRP
+                targetPart = head or fakeHRP
+            end
+        end
+        
+        if targetPart then
+            local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
+            if onScreen then
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(touchPos.X, touchPos.Y)).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    closestPart = targetPart
                 end
             end
-            
-            -- Fallback to HumanoidRootPart if target part not found
-            if not targetPart then
-                targetPart = v:FindFirstChild("HumanoidRootPart")
-            end
-            
-            if targetPart then
-                local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
-                if onScreen then
-                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - touchPos).Magnitude
-                    if dist < shortestDist then
-                        shortestDist = dist
-                        closestPart = targetPart
-                    end
-                end
-            end
-        end)
+        end
     end
-    
     return closestPart
 end
 
--- Hook the GetMousePos function
-if client.gameui and client.oldfunction.GetMousePos then
-    client.gameui.GetMousePos = function(self, ...)
-        if config.autoaimenabled then
-            local nearest = client.getNearestToTouch()
-            if nearest then
-                return nearest.Position
-            end
-        end
-        return client.oldfunction.GetMousePos(self, ...)
+client.gameui.GetMousePos = function(...)
+    local nearest = client.getNearestToTouch()
+    if config.autoaimenabled and nearest then
+        return nearest.Position
     end
+    return client.oldfunction.GetMousePos(...)
 end
 
 AutoAimSection:NewToggle("Enable Auto Aim", "Auto-aims when shooting", function(state)
