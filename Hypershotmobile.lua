@@ -94,11 +94,13 @@ local config = {
 
 -- Mobile touch position helper
 local function getTouchPosition()
-    local touches = UserInputService:GetTouchesEnabled()
-    if touches then
-        local touch = UserInputService:GetTouchPosition(0)
-        if touch then
-            return Vector2.new(touch.X, touch.Y)
+    if UserInputService.TouchEnabled then
+        local touchPositions = UserInputService:GetTouchPosition()
+        if touchPositions and #touchPositions > 0 then
+            local firstTouch = touchPositions[1]
+            if firstTouch then
+                return Vector2.new(firstTouch.X, firstTouch.Y)
+            end
         end
     end
     return UserInputService:GetMouseLocation()
