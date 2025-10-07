@@ -116,11 +116,21 @@ local AutoAimSection = AimingTab:NewSection("🎯 Auto Aim (Touch)")
 local MainESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/alohabeach/Main/refs/heads/master/utils/esp/source.lua"))()
 
 local client = {
-    gameui = require(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("GameUI"):WaitForChild("GameUIMod"));
+    gameui = nil;
     oldfunction = {};
 }
 
-client.oldfunction.GetMousePos = clonefunction(client.gameui.GetMousePos)
+-- Try to get gameui safely
+local success, result = pcall(function()
+    return require(game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui"):WaitForChild("GameUI"):WaitForChild("GameUIMod"))
+end)
+
+if success and result then
+    client.gameui = result
+    client.oldfunction.GetMousePos = clonefunction(client.gameui.GetMousePos)
+else
+    warn("Failed to load GameUI module - Silent Aim may not work")
+end
 
 local config = {
     autoaimenabled = false;
@@ -184,65 +194,85 @@ local function isEnemy(character)
 end
 
 client.getNearestToTouch = function()
+    if not config.autoaimenabled then return nil end
+    
     local touchPos = getTouchPosition()
-    if touchPos.Magnitude == 0 then return nil end
+    if touchPos.Magnitude == 0 then 
+        -- Return nil if no touch, let game handle normally
+        return nil
+    end
     
     local closestPart = nil
     local shortestDist = config.aimradius
     local entities = client.getentities()
     
     for i,v in next, entities do
-        if not isEnemy(v) then continue end
-        
-        local targetPart = nil
-        
-        -- Try to find the target part
-        if config.targetPart == "Head" then
-            targetPart = v:FindFirstChild("Head")
-        elseif config.targetPart == "FakeHRP" then
-            targetPart = v:FindFirstChild("FakeHRP")
-        else
-            -- Auto mode - try both
-            local head = v:FindFirstChild("Head")
-            local fakeHRP = v:FindFirstChild("FakeHRP")
-            if head and fakeHRP then
-                targetPart = math.random(1, 2) == 1 and head or fakeHRP
+        pcall(function()
+            if not isEnemy(v) then return end
+            
+            local targetPart = nil
+            
+            -- Try to find the target part
+            if config.targetPart == "Head" then
+                targetPart = v:FindFirstChild("Head")
+            elseif config.targetPart == "FakeHRP" then
+                targetPart = v:FindFirstChild("FakeHRP")
             else
-                targetPart = head or fakeHRP
-            end
-        end
-        
-        -- Fallback to HumanoidRootPart if target part not found
-        if not targetPart then
-            targetPart = v:FindFirstChild("HumanoidRootPart")
-        end
-        
-        if targetPart then
-            local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
-            if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - touchPos).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    closestPart = targetPart
+                -- Auto mode - try both
+                local head = v:FindFirstChild("Head")
+                local fakeHRP = v:FindFirstChild("FakeHRP")
+                if head and fakeHRP then
+                    targetPart = math.random(1, 2) == 1 and head or fakeHRP
+                else
+                    targetPart = head or fakeHRP
                 end
             end
-        end
+            
+            -- Fallback to HumanoidRootPart if target part not found
+            if not targetPart then
+                targetPart = v:FindFirstChild("HumanoidRootPart")
+            end
+            
+            if targetPart then
+                local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
+                if onScreen then
+                    local dist = (Vector2.new(screenPos.X, screenPos.Y) - touchPos).Magnitude
+                    if dist < shortestDist then
+                        shortestDist = dist
+                        closestPart = targetPart
+                    end
+                end
+            end
+        end)
     end
     
     return closestPart
 end
 
-client.gameui.GetMousePos = function(...)
-    local nearest = client.getNearestToTouch()
-    if config.autoaimenabled and nearest then
-        return nearest.Position
+-- Hook the GetMousePos function
+if client.gameui and client.oldfunction.GetMousePos then
+    client.gameui.GetMousePos = function(self, ...)
+        if config.autoaimenabled then
+            local nearest = client.getNearestToTouch()
+            if nearest then
+                return nearest.Position
+            end
+        end
+        return client.oldfunction.GetMousePos(self, ...)
     end
-    return client.oldfunction.GetMousePos(...)
 end
 
 AutoAimSection:NewToggle("Enable Auto Aim", "Auto-aims when shooting", function(state)
     config.autoaimenabled = state
-    Window:Notify("Auto Aim", state and "Enabled" or "Disabled", 2)
+    if state then
+        if not client.gameui then
+            Window:Notify("Auto Aim Error", "GameUI module not loaded!", 3)
+        else
+            Window:Notify("Auto Aim", "Enabled", 2)
+        end
+    else
+        Window:Notify("Auto Aim", "Disabled", 2)
+    end
 end)
 
 AutoAimSection:NewSlider("Aim Radius", 100, 500, 200, function(value)
@@ -261,7 +291,8 @@ AutoAimSection:NewDropdown("Target Part", {"Head", "FakeHRP", "Auto (Both)"}, fu
 end)
 
 AutoAimSection:NewLabel("📱 Automatically aims when you shoot!")
-AutoAimSection:NewLabel("📌 Just touch to shoot - auto-aims!")
+AutoAimSection:NewLabel("⚠️ If shooting breaks, disable Auto Aim")
+AutoAimSection:NewLabel("📌 Use Touch Aimlock instead if issues occur")
 
 AutoAimSection:NewButton("🔍 Test Auto Aim", "Check if NPCs are detected", function()
     local entities = client.getentities()
