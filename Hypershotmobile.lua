@@ -2,55 +2,94 @@
 local Kour6an = loadstring(game:HttpGet("https://raw.githubusercontent.com/Kour6ann/Kour6anhub/main/Kour6anhub.lua"))()
 local Window = Kour6an.CreateLib("Kour6anHub Mobile - Hypershot", "BloodTheme")
 
--- Mobile Detection
+-- Mobile Check
 local UserInputService = game:GetService("UserInputService")
-local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+if not UserInputService.TouchEnabled then
+    game:GetService("Players").LocalPlayer:Kick("⚠️ This script is MOBILE ONLY! Use the PC version instead.")
+    return
+end
 
 ----------------------------------------------------------------
 -- INFO TAB
 ----------------------------------------------------------------
-local InfoTab = Window:NewTab("Info")
-local InfoTitleSection = InfoTab:NewSection("⚔️ Welcome to Kour6anHUB Mobile ⚔️")
+local InfoTab = Window:NewTab("📱 Info")
+local InfoTitleSection = InfoTab:NewSection("⚔️ MOBILE EDITION ⚔️")
 InfoTitleSection:NewLabel("────────────────────────────")
-InfoTitleSection:NewLabel(" Best HyperShot Mobile Script ")
+InfoTitleSection:NewLabel(" Kour6anHUB Mobile - HyperShot ")
 InfoTitleSection:NewLabel("────────────────────────────")
 
 local InfoSection = InfoTab:NewSection("ℹ️ Hub Information")
-InfoSection:NewLabel("Hub: Kour6anHUB - HyperShot Mobile")
-InfoSection:NewLabel("Version: 2.0 Mobile")
-InfoSection:NewLabel(" 📱 Optimized for Mobile Devices!")
-InfoSection:NewLabel(" 📌 Most functions support TeamCheck!")
-InfoSection:NewLabel(" ⚠️ Don't use in DUELS!")
-InfoSection:NewLabel(" 📌 YOU'LL GET INSTA BAN IN DUELS!")
+InfoSection:NewLabel("Version: 2.0 Mobile Pure")
+InfoSection:NewLabel("Platform: Mobile Devices Only")
+InfoSection:NewLabel("")
+InfoSection:NewLabel("📱 Touch Controls Enabled")
+InfoSection:NewLabel("📌 Team Check Supported")
+InfoSection:NewLabel("⚠️ NEVER USE IN DUELS!")
+InfoSection:NewLabel("🚫 INSTA BAN IN DUELS!")
 InfoSection:NewLabel("────────────────────────────")
 
 local CreditsSection = InfoTab:NewSection("👑 Credits")
 CreditsSection:NewLabel("Created by: Kour6an")
-CreditsSection:NewLabel("Mobile Version by: Community")
-CreditsSection:NewLabel("Discord 💬: discord.gg/3ZqFVq3ZJ")
-CreditsSection:NewLabel("Youtube 🎥: youtube.com/@kour6an")
+CreditsSection:NewLabel("Mobile Optimized Edition")
+CreditsSection:NewLabel("Discord: discord.gg/3ZqFVq3ZJ")
+CreditsSection:NewLabel("YouTube: youtube.com/@kour6an")
 
 CreditsSection:NewButton("📋 Copy Discord Link", "Click to copy", function()
     setclipboard("https://discord.gg/3ZqFVq3ZJ")
-    Window:Notify("Copied!", "Discord link copied to clipboard", 3)
+    Window:Notify("Copied!", "Discord link copied", 3)
 end)
 
 CreditsSection:NewButton("📋 Copy YouTube Link", "Click to copy", function()
     setclipboard("https://www.youtube.com/@kour6an")
-    Window:Notify("Copied!", "YouTube link copied to clipboard", 3)
+    Window:Notify("Copied!", "YouTube link copied", 3)
 end)
 
-local FooterSection = InfoTab:NewSection("📢 Updates")
-FooterSection:NewLabel("Mobile controls optimized!")
+local FooterSection = InfoTab:NewSection("📢 Mobile Features")
+FooterSection:NewLabel("✓ Touch-based aimlock")
+FooterSection:NewLabel("✓ On-screen fly controls")
+FooterSection:NewLabel("✓ Auto-aim built-in")
+FooterSection:NewLabel("✓ Performance optimized")
 FooterSection:NewLabel("────────────────────────────")
 
 ----------------------------------------------------------------
--- AIMING TAB (MOBILE OPTIMIZED)
+-- AIMING TAB (PURE MOBILE)
 ----------------------------------------------------------------
-local AimingTab = Window:NewTab("Aiming")
+local AimingTab = Window:NewTab("🎯 Aiming")
 
 ----------------------------------------------------------------
--- GENERAL SETTINGS SECTION
+-- TOUCH POSITION TRACKER
+----------------------------------------------------------------
+local touchState = {
+    currentPosition = nil,
+    isTouching = false,
+    activeTouches = {}
+}
+
+UserInputService.TouchStarted:Connect(function(touch, gameProcessed)
+    touchState.isTouching = true
+    touchState.currentPosition = Vector2.new(touch.Position.X, touch.Position.Y)
+    touchState.activeTouches[touch] = true
+end)
+
+UserInputService.TouchMoved:Connect(function(touch, gameProcessed)
+    if touchState.activeTouches[touch] then
+        touchState.currentPosition = Vector2.new(touch.Position.X, touch.Position.Y)
+    end
+end)
+
+UserInputService.TouchEnded:Connect(function(touch, gameProcessed)
+    touchState.activeTouches[touch] = nil
+    if not next(touchState.activeTouches) then
+        touchState.isTouching = false
+    end
+end)
+
+local function getTouchPosition()
+    return touchState.currentPosition or Vector2.new(0, 0)
+end
+
+----------------------------------------------------------------
+-- GENERAL SETTINGS
 ----------------------------------------------------------------
 local GeneralSettingsSection = AimingTab:NewSection("⚙️ General Settings")
 
@@ -64,15 +103,15 @@ GeneralSettingsSection:NewToggle("Team Check", "Ignore teammates", function(stat
     Window:Notify("Team Check", state and "Enabled" or "Disabled", 2)
 end)
 
-GeneralSettingsSection:NewToggle("Wall Check", "Check walls between targets", function(state)
+GeneralSettingsSection:NewToggle("Wall Check", "Check walls", function(state)
     sharedConfig.wallCheck = state
     Window:Notify("Wall Check", state and "Enabled" or "Disabled", 2)
 end)
 
 ----------------------------------------------------------------
--- SILENT AIM SECTION (Mobile Compatible)
+-- AUTO AIM SECTION (Mobile Auto-Aim)
 ----------------------------------------------------------------
-local SilentAimSection = AimingTab:NewSection("🎯 Silent Aim (Auto)")
+local AutoAimSection = AimingTab:NewSection("🎯 Auto Aim (Touch)")
 
 local MainESP = loadstring(game:HttpGet("https://raw.githubusercontent.com/alohabeach/Main/refs/heads/master/utils/esp/source.lua"))()
 
@@ -84,30 +123,15 @@ local client = {
 client.oldfunction.GetMousePos = clonefunction(client.gameui.GetMousePos)
 
 local config = {
-    silentaimenabled = false;
-    silentaimradius = 150; -- Increased for mobile
-    fovCircleVisible = false;
-    fovCircleColor = Color3.fromRGB(255, 255, 255);
+    autoaimenabled = false;
+    aimradius = 200;
+    fovCircleVisible = true;
+    fovCircleColor = Color3.fromRGB(0, 255, 0);
     targetPart = "Head";
-    teamCheck = true;
 }
 
--- Mobile touch position helper
-local function getTouchPosition()
-    if UserInputService.TouchEnabled then
-        local touchPositions = UserInputService:GetTouchPosition()
-        if touchPositions and #touchPositions > 0 then
-            local firstTouch = touchPositions[1]
-            if firstTouch then
-                return Vector2.new(firstTouch.X, firstTouch.Y)
-            end
-        end
-    end
-    return UserInputService:GetMouseLocation()
-end
-
 local Circle = MainESP.CreateCircle()
-Circle.Radius = config.silentaimradius
+Circle.Radius = config.aimradius
 Circle.Color = config.fovCircleColor
 Circle.Position = MainESP.TracerOrigins.Middle
 Circle.NumSides = 500
@@ -127,7 +151,7 @@ client.getentities = function()
 end
 
 local function isEnemy(character)
-    if not config.teamCheck then return true end
+    if not sharedConfig.teamCheck then return true end
     local enemyHighlight = character:FindFirstChild("EnemyHighlight", true)
     if not enemyHighlight then return false end
     local playerOutline = character:FindFirstChild("PlayerOutline", true)
@@ -135,10 +159,12 @@ local function isEnemy(character)
     return true
 end
 
-client.getNearestToCursor = function()
-    local inputPos = getTouchPosition()
+client.getNearestToTouch = function()
+    local touchPos = getTouchPosition()
+    if touchPos.Magnitude == 0 then return nil end
+    
     local closestPart = nil
-    local shortestDist = config.silentaimradius
+    local shortestDist = config.aimradius
     
     for i,v in next, client.getentities() do
         if not isEnemy(v) then continue end
@@ -161,7 +187,7 @@ client.getNearestToCursor = function()
         if targetPart then
             local screenPos, onScreen = workspace.CurrentCamera:WorldToViewportPoint(targetPart.Position)
             if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - Vector2.new(inputPos.X, inputPos.Y)).Magnitude
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - touchPos).Magnitude
                 if dist < shortestDist then
                     shortestDist = dist
                     closestPart = targetPart
@@ -173,96 +199,54 @@ client.getNearestToCursor = function()
 end
 
 client.gameui.GetMousePos = function(...)
-    local nearest = client.getNearestToCursor()
-    if config.silentaimenabled and nearest then
+    local nearest = client.getNearestToTouch()
+    if config.autoaimenabled and nearest then
         return nearest.Position
     end
     return client.oldfunction.GetMousePos(...)
 end
 
-SilentAimSection:NewToggle("Enable Silent Aim", "Auto-aims at nearest enemy", function(state)
-    config.silentaimenabled = state
-    Window:Notify("Silent Aim", state and "Enabled (Auto)" or "Disabled", 2)
+AutoAimSection:NewToggle("Enable Auto Aim", "Auto-aims when shooting", function(state)
+    config.autoaimenabled = state
+    Window:Notify("Auto Aim", state and "Enabled" or "Disabled", 2)
 end)
 
-SilentAimSection:NewSlider("FOV Radius", 100, 500, 150, function(value)
-    config.silentaimradius = value
+AutoAimSection:NewSlider("Aim Radius", 100, 500, 200, function(value)
+    config.aimradius = value
     Circle.Radius = value
 end)
 
-SilentAimSection:NewToggle("Show FOV Circle", "Display detection radius", function(state)
+AutoAimSection:NewToggle("Show FOV Circle", "Display aim circle", function(state)
     config.fovCircleVisible = state
     Circle.Visible = state
 end)
 
-SilentAimSection:NewDropdown("Target Part", {"Head", "FakeHRP", "Auto (Both)"}, function(choice)
+AutoAimSection:NewDropdown("Target Part", {"Head", "FakeHRP", "Auto (Both)"}, function(choice)
     config.targetPart = choice == "Auto (Both)" and "Auto" or choice
     Window:Notify("Target Part", "Now targeting: "..choice, 2)
 end)
 
-SilentAimSection:NewLabel("📱 Works automatically when shooting!")
+AutoAimSection:NewLabel("📱 Automatically aims when you shoot!")
+AutoAimSection:NewLabel("📌 Just touch to shoot - auto-aims!")
 
 ----------------------------------------------------------------
--- MOBILE AIMLOCK SECTION
+-- TOUCH AIMLOCK SECTION
 ----------------------------------------------------------------
-local AimlockSection = AimingTab:NewSection("🔒 Aimlock (Touch)")
+local TouchAimlockSection = AimingTab:NewSection("🔒 Touch Aimlock")
 
-_G.Disabled = false
-_G.Aimlock = false
-_G.ShowFOV = false
-_G.FOVRadius = 200 -- Larger for mobile
-_G.WallCheck = true
-_G.TargetPart = "Head"
+_G.TouchAimlock = false
+_G.AimlockFOV = 250
+_G.AimlockTarget = "Head"
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
-local aiming = false
-local currentTarget = nil
-
--- Mobile touch detection
-local touchStart = nil
-UserInputService.TouchStarted:Connect(function(touch, gameProcessed)
-    if not gameProcessed and _G.Aimlock then
-        touchStart = touch
-        aiming = true
-        currentTarget = nil
-    end
-end)
-
-UserInputService.TouchEnded:Connect(function(touch, gameProcessed)
-    if touchStart == touch then
-        aiming = false
-        currentTarget = nil
-        touchStart = nil
-    end
-end)
-
-local DrawingSuccess, Drawing = pcall(function() return Drawing end)
-local FOVCircle
-if DrawingSuccess and Drawing then
-    FOVCircle = Drawing.new("Circle")
-    FOVCircle.Visible = false
-    FOVCircle.Radius = _G.FOVRadius
-    FOVCircle.Thickness = 2
-    FOVCircle.Transparency = 1
-    FOVCircle.Color = Color3.fromRGB(0,255,0)
-    FOVCircle.Filled = false
-end
-
-local function isWallBetween(origin, target, character)
-    if not _G.WallCheck then return false end
-    local rayParams = RaycastParams.new()
-    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, character}
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-    rayParams.IgnoreWater = true
-    local rayResult = workspace:Raycast(origin, (target.Position - origin), rayParams)
-    return rayResult ~= nil
-end
+local aimlockTarget = nil
 
 local function isEnemyAimlock(character)
+    if not sharedConfig.teamCheck then return true end
     local enemyHighlight = character:FindFirstChild("EnemyHighlight", true)
     if not enemyHighlight then return false end
     local playerOutline = character:FindFirstChild("PlayerOutline", true)
@@ -271,7 +255,7 @@ local function isEnemyAimlock(character)
 end
 
 local function getTargetPart(character)
-    return character:FindFirstChild(_G.TargetPart) or character:FindFirstChild("Head") or character:FindFirstChild("HumanoidRootPart")
+    return character:FindFirstChild(_G.AimlockTarget) or character:FindFirstChild("Head")
 end
 
 local function getAllEnemies()
@@ -291,19 +275,20 @@ local function getAllEnemies()
     return enemies
 end
 
-local function getClosestEnemy(inputPos)
+local function getClosestEnemy()
+    local touchPos = getTouchPosition()
+    if touchPos.Magnitude == 0 then return nil end
+    
     local closestEnemy, smallestDist = nil, math.huge
     for _, enemy in ipairs(getAllEnemies()) do
         local targetPart = getTargetPart(enemy)
         if targetPart then
             local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
             if onScreen then
-                local dist = (Vector2.new(screenPos.X, screenPos.Y) - inputPos).Magnitude
-                if dist <= _G.FOVRadius and dist < smallestDist then
-                    if not isWallBetween(Camera.CFrame.Position, targetPart, enemy) then
-                        closestEnemy = enemy
-                        smallestDist = dist
-                    end
+                local dist = (Vector2.new(screenPos.X, screenPos.Y) - touchPos).Magnitude
+                if dist <= _G.AimlockFOV and dist < smallestDist then
+                    closestEnemy = enemy
+                    smallestDist = dist
                 end
             end
         end
@@ -311,87 +296,53 @@ local function getClosestEnemy(inputPos)
     return closestEnemy
 end
 
-local function isTargetValid(target, inputPos)
-    if not target or not target.Parent then return false end
-    local targetPart = getTargetPart(target)
-    if not targetPart then return false end
-    local screenPos, onScreen = Camera:WorldToViewportPoint(targetPart.Position)
-    if not onScreen then return false end
-    local dist = (Vector2.new(screenPos.X, screenPos.Y) - inputPos).Magnitude
-    if dist > _G.FOVRadius then return false end
-    if isWallBetween(Camera.CFrame.Position, targetPart, target) then return false end
-    if not isEnemyAimlock(target) then return false end
-    return true
-end
-
 RunService.RenderStepped:Connect(function()
-    if not FOVCircle then return end
-    if _G.Disabled or not _G.Aimlock or not _G.ShowFOV then
-        FOVCircle.Visible = false
-    else
-        FOVCircle.Visible = true
-        FOVCircle.Radius = _G.FOVRadius
-        FOVCircle.Position = getTouchPosition()
-    end
-    local inputPos = getTouchPosition()
-    if _G.Aimlock and aiming then
-        if currentTarget and isTargetValid(currentTarget, inputPos) then
-            local targetPart = getTargetPart(currentTarget)
+    if _G.TouchAimlock and touchState.isTouching then
+        local target = getClosestEnemy()
+        if target then
+            local targetPart = getTargetPart(target)
             if targetPart then
                 Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
-            end
-        else
-            currentTarget = getClosestEnemy(inputPos)
-            if currentTarget then
-                local targetPart = getTargetPart(currentTarget)
-                if targetPart then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPart.Position)
-                end
             end
         end
     end
 end)
 
-AimlockSection:NewToggle("Enable Aimlock", "Toggle aimlock", function(state)
-    _G.Aimlock = state
-    _G.ShowFOV = state
-    Window:Notify("Aimlock", state and "Enabled" or "Disabled", 2)
+TouchAimlockSection:NewToggle("Enable Touch Aimlock", "Locks aim when touching screen", function(state)
+    _G.TouchAimlock = state
+    Window:Notify("Touch Aimlock", state and "Enabled" or "Disabled", 2)
 end)
 
-AimlockSection:NewDropdown("Target Part", {"Head", "HumanoidRootPart", "UpperTorso"}, function(choice)
-    _G.TargetPart = choice
+TouchAimlockSection:NewDropdown("Target Part", {"Head", "HumanoidRootPart", "UpperTorso"}, function(choice)
+    _G.AimlockTarget = choice
     Window:Notify("Target Part", "Changed to: " .. choice, 2)
 end)
 
-AimlockSection:NewSlider("FOV Radius", 100, 500, 200, function(value)
-    _G.FOVRadius = value
-    if FOVCircle then FOVCircle.Radius = value end
+TouchAimlockSection:NewSlider("FOV Radius", 100, 500, 250, function(value)
+    _G.AimlockFOV = value
 end)
 
-AimlockSection:NewLabel("📱 Hold screen to activate aimlock")
-AimlockSection:NewLabel("📌 Auto team check enabled")
+TouchAimlockSection:NewLabel("📱 Touch and hold screen to lock aim!")
+TouchAimlockSection:NewLabel("📌 Works while touching anywhere")
 
 ----------------------------------------------------------------
--- AUTO FARM TAB (Mobile Optimized)
+-- AUTO FARM TAB
 ----------------------------------------------------------------
-local AutoFarmTab = Window:NewTab("AutoFarm")
-local FlagSection = AutoFarmTab:NewSection("Auto FLAG")
-local TPEnemySection = AutoFarmTab:NewSection("TP to Enemy")
+local AutoFarmTab = Window:NewTab("🤖 AutoFarm")
+local FlagSection = AutoFarmTab:NewSection("🚩 Auto FLAG")
+local TPEnemySection = AutoFarmTab:NewSection("⚡ TP to Enemy")
 
 local rs = game:GetService("RunService")
 local ws = game:GetService("Workspace")
 local plrs = game:GetService("Players")
-local lp = plrs.LocalPlayer or LocalPlayer
+local lp = plrs.LocalPlayer
 local camAF = ws.CurrentCamera
 
 local Map = ws:FindFirstChild("Map")
 local bots = ws:FindFirstChild("Mobs")
-if not bots then 
-    return lp:Kick("Mobs folder not found!") 
-end
 
 local function getHRP()
-    local char = lp and (lp.Character or lp.CharacterAdded:Wait())
+    local char = lp and lp.Character
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
@@ -463,24 +414,26 @@ local function getEnemiesInRange()
     local myHRP = myChar.HumanoidRootPart
     local myTeam = myChar:GetAttribute("Team")
     
-    for _, v in bots:GetChildren() do
-        if myTeam ~= -1 and v:GetAttribute("Team") == myTeam then continue end
-        
-        local hrp = v:FindFirstChild("HumanoidRootPart")
-        local head = v:FindFirstChild("Head")
-        local hum = v:FindFirstChild("Humanoid")
-        
-        if hrp and head and hum and hum.Health > 0 then
-            local dist = (myHRP.Position - hrp.Position).Magnitude
+    if bots then
+        for _, v in bots:GetChildren() do
+            if myTeam ~= -1 and v:GetAttribute("Team") == myTeam then continue end
             
-            if dist <= cfg.maxRange then
-                table.insert(enemies, {
-                    hrp = hrp,
-                    head = head,
-                    distance = dist,
-                    name = v.Name,
-                    obj = v
-                })
+            local hrp = v:FindFirstChild("HumanoidRootPart")
+            local head = v:FindFirstChild("Head")
+            local hum = v:FindFirstChild("Humanoid")
+            
+            if hrp and head and hum and hum.Health > 0 then
+                local dist = (myHRP.Position - hrp.Position).Magnitude
+                
+                if dist <= cfg.maxRange then
+                    table.insert(enemies, {
+                        hrp = hrp,
+                        head = head,
+                        distance = dist,
+                        name = v.Name,
+                        obj = v
+                    })
+                end
             end
         end
     end
@@ -594,7 +547,8 @@ FlagSection:NewToggle("Auto Flag", "Auto capture flags", function(s)
     autoFlagEnabled = s
     Window:Notify("AutoFlag", s and "Enabled" or "Disabled", 2)
 end)
-FlagSection:NewLabel("📱 Works automatically!")
+FlagSection:NewLabel("📱 Fully automatic!")
+FlagSection:NewLabel("📌 Undetectable unless reported")
 
 TPEnemySection:NewToggle("TP to Enemy", "Auto TP & shoot", function(s)
     cfg.enabled = s
@@ -613,15 +567,14 @@ TPEnemySection:NewSlider("Max Range", 50, 500, cfg.maxRange, function(v)
     cfg.maxRange = v
 end)
 
-TPEnemySection:NewLabel("📱 Auto-Shoot ON when enabled!")
+TPEnemySection:NewLabel("📱 Auto-Shoot when TP enabled!")
+TPEnemySection:NewLabel("📌 Rotates through all enemies")
 
 ----------------------------------------------------------------
--- WEAPONS TAB (Mobile Optimized)
+-- WEAPONS TAB
 ----------------------------------------------------------------
-local WeaponsTab = Window:NewTab("Weapons")
+local WeaponsTab = Window:NewTab("🔫 Weapons")
 local AmmoSection = WeaponsTab:NewSection("Ammo Management")
-
-local plr = game:GetService("Players").LocalPlayer
 
 local weaponState = {
     infiniteAmmo = false,
@@ -630,7 +583,7 @@ local weaponState = {
 }
 
 local function getMainGui()
-    return plr.PlayerGui:FindFirstChild("MainGui") or nil
+    return lp.PlayerGui:FindFirstChild("MainGui")
 end
 
 task.spawn(function()
@@ -648,10 +601,10 @@ end)
 
 local function toggleRainbowBullets(state)
     weaponState.freeRainbowBullets = state
-    game.Players.LocalPlayer:SetAttribute("RainbowBullets", state)
+    lp:SetAttribute("RainbowBullets", state)
 end
 
-AmmoSection:NewLabel("🔫 Ammo Management")
+AmmoSection:NewLabel("🔫 Ammo Controls")
 
 AmmoSection:NewToggle("Infinite Ammo", "Unlimited ammo", function(s)
     weaponState.infiniteAmmo = s
@@ -669,21 +622,17 @@ AmmoSection:NewToggle("Free Rainbow Bullets", "Unlock rainbow bullets", function
     Window:Notify("Rainbow Bullets", state and "Enabled" or "Disabled", 2)
 end)
 
-----------------------------------------------------------------
--- VISUALS TAB (Simplified for Mobile Performance)
-----------------------------------------------------------------
-local VisualsTab = Window:NewTab("Visuals")
-local ESPSection = VisualsTab:NewSection("ESP (Mobile Optimized)")
+AmmoSection:NewLabel("📱 Optimized for mobile!")
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
-local LocalPlayer = Players.LocalPlayer
-local Workspace = game:GetService("Workspace")
-local MobsFolder = Workspace:FindFirstChild("Mobs")
+----------------------------------------------------------------
+-- VISUALS TAB (Mobile ESP)
+----------------------------------------------------------------
+local VisualsTab = Window:NewTab("👁️ Visuals")
+local ESPSection = VisualsTab:NewSection("ESP (Mobile)")
 
 local ESPEnabled = false
 local ESPColor = Color3.fromRGB(255, 0, 0)
+local ESPDistance = 500
 local ESP_CONNECTIONS = {}
 
 local function IsEnemy(target)
@@ -694,7 +643,7 @@ local function IsEnemy(target)
     return target:FindFirstChild("EnemyHighlight") ~= nil
 end
 
-local function clearESPConnections()
+local function clearESP()
     for _, conn in ipairs(ESP_CONNECTIONS) do
         if conn and conn.Connected then conn:Disconnect() end
     end
@@ -706,7 +655,7 @@ local function clearESPConnections()
     end
 end
 
-local function createMobileESP(target)
+local function createESP(target)
     if not target or not target.Parent then return end
     local rootPart = target:FindFirstChild("HumanoidRootPart") or target.PrimaryPart
     if not rootPart then return end
@@ -715,7 +664,7 @@ local function createMobileESP(target)
     local billboard = Instance.new("BillboardGui")
     billboard.Name = "MobileESP"
     billboard.Adornee = rootPart
-    billboard.Size = UDim2.new(0, 150, 0, 50)
+    billboard.Size = UDim2.new(0, 200, 0, 60)
     billboard.StudsOffset = Vector3.new(0, 3, 0)
     billboard.AlwaysOnTop = true
     billboard.Enabled = ESPEnabled
@@ -728,7 +677,7 @@ local function createMobileESP(target)
     label.TextColor3 = ESPColor
     label.TextStrokeTransparency = 0.3
     label.Font = Enum.Font.SourceSansBold
-    label.TextSize = 18
+    label.TextSize = 20
     label.TextXAlignment = Enum.TextXAlignment.Center
     label.TextYAlignment = Enum.TextYAlignment.Center
     label.Text = ""
@@ -737,10 +686,14 @@ local function createMobileESP(target)
     local conn = RunService.RenderStepped:Connect(function()
         if ESPEnabled and target and rootPart and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
             local distance = (LocalPlayer.Character.HumanoidRootPart.Position - rootPart.Position).Magnitude
-            local distanceMeters = distance / 3
-            label.Text = target.Name .. "\n" .. string.format("%.0f", distanceMeters) .. "m"
-            label.TextColor3 = ESPColor
-            billboard.Enabled = true
+            if distance <= ESPDistance then
+                local distanceMeters = distance / 3
+                label.Text = target.Name .. "\n" .. string.format("%.0f", distanceMeters) .. "m"
+                label.TextColor3 = ESPColor
+                billboard.Enabled = true
+            else
+                billboard.Enabled = false
+            end
         else
             billboard.Enabled = false
         end
@@ -749,40 +702,45 @@ local function createMobileESP(target)
     table.insert(ESP_CONNECTIONS, conn)
 end
 
-local function applyMobileESP()
-    clearESPConnections()
+local function applyESP()
+    clearESP()
     if not ESPEnabled then return end
     for _, plr in pairs(Players:GetPlayers()) do
         if plr ~= LocalPlayer and plr.Character then
-            createMobileESP(plr.Character)
+            createESP(plr.Character)
         end
     end
-    if MobsFolder then
-        for _, mob in pairs(MobsFolder:GetChildren()) do
-            createMobileESP(mob)
+    if workspace:FindFirstChild("Mobs") then
+        for _, mob in pairs(workspace.Mobs:GetChildren()) do
+            createESP(mob)
         end
     end
 end
 
-ESPSection:NewToggle("Enable ESP", "Show enemy names & distance", function(state)
+ESPSection:NewToggle("Enable ESP", "Show enemy info", function(state)
     ESPEnabled = state
-    if state then applyMobileESP() else clearESPConnections() end
+    if state then applyESP() else clearESP() end
     Window:Notify("ESP", state and "Enabled" or "Disabled", 2)
+end)
+
+ESPSection:NewSlider("Max Distance", 100, 1000, 500, function(val)
+    ESPDistance = val
 end)
 
 ESPSection:NewColorpicker("ESP Color", ESPColor, function(c)
     ESPColor = c
 end)
 
-ESPSection:NewLabel("📱 Lightweight ESP for mobile!")
+ESPSection:NewLabel("📱 Lightweight for mobile!")
+ESPSection:NewLabel("📌 Shows name + distance only")
 
 ----------------------------------------------------------------
--- PLAYERS TAB (Mobile Controls)
+-- PLAYERS TAB (Mobile Movement)
 ----------------------------------------------------------------
-local PlayersTab = Window:NewTab("Players")
+local PlayersTab = Window:NewTab("🏃 Players")
 local PlayerSection = PlayersTab:NewSection("Player Mods")
 
-local state = {
+local playerState = {
     speedEnabled = false,
     speedMultiplier = 2,
     noclipEnabled = false,
@@ -794,31 +752,31 @@ local state = {
 local function getCharacter()
     return LocalPlayer and LocalPlayer.Character
 end
+
 local function getHRP()
     local c = getCharacter()
     return c and c:FindFirstChild("HumanoidRootPart")
 end
+
 local function getHumanoid()
     local c = getCharacter()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 
--- Speed
 local function applySpeed()
-    if not state.speedEnabled then return end
+    if not playerState.speedEnabled then return end
     local hrp = getHRP()
     local hum = getHumanoid()
     if not hrp or not hum then return end
     local moveDir = hum.MoveDirection
     if moveDir.Magnitude > 0 then
-        local step = moveDir.Unit * state.speedMultiplier
+        local step = moveDir.Unit * playerState.speedMultiplier
         hrp.CFrame = hrp.CFrame + step
     end
 end
 
--- Noclip
 local function applyNoclip()
-    if not state.noclipEnabled then return end
+    if not playerState.noclipEnabled then return end
     local char = getCharacter()
     if not char then return end
     for _, part in ipairs(char:GetDescendants()) do
@@ -828,9 +786,8 @@ local function applyNoclip()
     end
 end
 
--- Infinite Jump
 UserInputService.JumpRequest:Connect(function()
-    if state.infiniteJumpEnabled then
+    if playerState.infiniteJumpEnabled then
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then
             hum:ChangeState(Enum.HumanoidStateType.Jumping)
@@ -838,39 +795,51 @@ UserInputService.JumpRequest:Connect(function()
     end
 end)
 
--- Mobile Fly Controls
+-- Mobile Fly GUI
 local FlyGui = Instance.new("ScreenGui")
 FlyGui.Name = "MobileFlyControls"
 FlyGui.ResetOnSpawn = false
 FlyGui.Enabled = false
+FlyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
-local function createFlyButton(name, position, text)
+local function createFlyButton(name, position, text, size)
     local button = Instance.new("TextButton")
     button.Name = name
-    button.Size = UDim2.new(0, 80, 0, 80)
+    button.Size = size or UDim2.new(0, 90, 0, 90)
     button.Position = position
     button.Text = text
     button.Font = Enum.Font.SourceSansBold
-    button.TextSize = 24
-    button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    button.BackgroundTransparency = 0.3
+    button.TextSize = 28
+    button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    button.BackgroundTransparency = 0.2
     button.TextColor3 = Color3.fromRGB(255, 255, 255)
     button.BorderSizePixel = 0
+    button.AutoButtonColor = false
     
     local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 15)
+    corner.CornerRadius = UDim.new(0, 20)
     corner.Parent = button
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(0, 255, 0)
+    stroke.Thickness = 2
+    stroke.Parent = button
     
     button.Parent = FlyGui
     return button
 end
 
--- Create fly control buttons
-local upBtn = createFlyButton("UpBtn", UDim2.new(0.5, -40, 0.3, -120), "↑")
-local downBtn = createFlyButton("DownBtn", UDim2.new(0.5, -40, 0.3, 80), "↓")
-local forwardBtn = createFlyButton("ForwardBtn", UDim2.new(0.5, -40, 0.3, -40), "W")
-local leftBtn = createFlyButton("LeftBtn", UDim2.new(0.5, -130, 0.3, -40), "A")
-local rightBtn = createFlyButton("RightBtn", UDim2.new(0.5, 50, 0.3, -40), "D")
+-- Create fly buttons (positioned for mobile)
+local centerX = 0.5
+local centerY = 0.65
+local spacing = 100
+
+local upBtn = createFlyButton("UpBtn", UDim2.new(centerX, -45, centerY, -200), "▲")
+local downBtn = createFlyButton("DownBtn", UDim2.new(centerX, -45, centerY, 110), "▼")
+local forwardBtn = createFlyButton("ForwardBtn", UDim2.new(centerX, -45, centerY, -45), "W")
+local leftBtn = createFlyButton("LeftBtn", UDim2.new(centerX, -155, centerY, -45), "A")
+local rightBtn = createFlyButton("RightBtn", UDim2.new(centerX, 65, centerY, -45), "D")
+local backBtn = createFlyButton("BackBtn", UDim2.new(centerX, -45, centerY, 10), "S")
 
 FlyGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -878,23 +847,69 @@ local flyDirections = {
     up = false,
     down = false,
     forward = false,
+    backward = false,
     left = false,
     right = false
 }
 
-upBtn.MouseButton1Down:Connect(function() flyDirections.up = true end)
-upBtn.MouseButton1Up:Connect(function() flyDirections.up = false end)
-downBtn.MouseButton1Down:Connect(function() flyDirections.down = true end)
-downBtn.MouseButton1Up:Connect(function() flyDirections.down = false end)
-forwardBtn.MouseButton1Down:Connect(function() flyDirections.forward = true end)
-forwardBtn.MouseButton1Up:Connect(function() flyDirections.forward = false end)
-leftBtn.MouseButton1Down:Connect(function() flyDirections.left = true end)
-leftBtn.MouseButton1Up:Connect(function() flyDirections.left = false end)
-rightBtn.MouseButton1Down:Connect(function() flyDirections.right = true end)
-rightBtn.MouseButton1Up:Connect(function() flyDirections.right = false end)
+-- Touch event handlers for fly buttons
+upBtn.TouchTap:Connect(function() end)
+upBtn.MouseButton1Down:Connect(function() 
+    flyDirections.up = true
+    upBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+upBtn.MouseButton1Up:Connect(function() 
+    flyDirections.up = false
+    upBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
+
+downBtn.MouseButton1Down:Connect(function() 
+    flyDirections.down = true
+    downBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+downBtn.MouseButton1Up:Connect(function() 
+    flyDirections.down = false
+    downBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
+
+forwardBtn.MouseButton1Down:Connect(function() 
+    flyDirections.forward = true
+    forwardBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+forwardBtn.MouseButton1Up:Connect(function() 
+    flyDirections.forward = false
+    forwardBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
+
+backBtn.MouseButton1Down:Connect(function() 
+    flyDirections.backward = true
+    backBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+backBtn.MouseButton1Up:Connect(function() 
+    flyDirections.backward = false
+    backBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
+
+leftBtn.MouseButton1Down:Connect(function() 
+    flyDirections.left = true
+    leftBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+leftBtn.MouseButton1Up:Connect(function() 
+    flyDirections.left = false
+    leftBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
+
+rightBtn.MouseButton1Down:Connect(function() 
+    flyDirections.right = true
+    rightBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+end)
+rightBtn.MouseButton1Up:Connect(function() 
+    flyDirections.right = false
+    rightBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+end)
 
 local function flyLoop()
-    while state.flyEnabled do
+    while playerState.flyEnabled do
         task.wait()
         local hrp = getHRP()
         local cam = workspace.CurrentCamera
@@ -902,13 +917,14 @@ local function flyLoop()
 
         local moveDirection = Vector3.new()
         if flyDirections.forward then moveDirection += cam.CFrame.LookVector end
+        if flyDirections.backward then moveDirection -= cam.CFrame.LookVector end
         if flyDirections.left then moveDirection -= cam.CFrame.RightVector end
         if flyDirections.right then moveDirection += cam.CFrame.RightVector end
         if flyDirections.up then moveDirection += Vector3.new(0,1,0) end
         if flyDirections.down then moveDirection -= Vector3.new(0,1,0) end
 
         if moveDirection.Magnitude > 0 then
-            hrp.Velocity = moveDirection.Unit * state.flySpeed
+            hrp.Velocity = moveDirection.Unit * playerState.flySpeed
         else
             hrp.Velocity = Vector3.zero
         end
@@ -925,54 +941,62 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function(char)
     task.wait(1)
-    if state.noclipEnabled then applyNoclip() end
-    if state.flyEnabled then task.spawn(flyLoop) end
+    if playerState.noclipEnabled then applyNoclip() end
+    if playerState.flyEnabled then task.spawn(flyLoop) end
 end)
 
 -- UI Controls
 PlayerSection:NewToggle("Speed", "Toggle speed hack", function(value)
-    state.speedEnabled = value
-    Window:Notify("Speed", value and "Enabled" or "Disabled", 2)
+    playerState.speedEnabled = value
+    Window:Notify("Speed", value and ("Enabled - " .. playerState.speedMultiplier .. "x") or "Disabled", 2)
 end)
 
-PlayerSection:NewSlider("Speed Multiplier", 1, 10, state.speedMultiplier, function(val)
-    state.speedMultiplier = val
+PlayerSection:NewSlider("Speed Multiplier", 1, 10, playerState.speedMultiplier, function(val)
+    playerState.speedMultiplier = val
+    if playerState.speedEnabled then
+        Window:Notify("Speed", "Set to " .. val .. "x", 1)
+    end
 end)
 
-PlayerSection:NewToggle("Noclip", "Toggle noclip", function(value)
-    state.noclipEnabled = value
+PlayerSection:NewToggle("Noclip", "Walk through walls", function(value)
+    playerState.noclipEnabled = value
     if value then applyNoclip() end
     Window:Notify("Noclip", value and "Enabled" or "Disabled", 2)
 end)
 
-PlayerSection:NewToggle("Infinite Jump", "Toggle infinite jump", function(value)
-    state.infiniteJumpEnabled = value
+PlayerSection:NewToggle("Infinite Jump", "Jump infinitely", function(value)
+    playerState.infiniteJumpEnabled = value
     Window:Notify("Infinite Jump", value and "Enabled" or "Disabled", 2)
 end)
 
-PlayerSection:NewToggle("Fly", "Toggle fly mode", function(value)
-    state.flyEnabled = value
+PlayerSection:NewToggle("Fly", "Fly mode with touch controls", function(value)
+    playerState.flyEnabled = value
     FlyGui.Enabled = value
     if value then
         task.spawn(flyLoop)
-        Window:Notify("Fly", "Enabled - Use on-screen controls", 3)
+        Window:Notify("Fly", "Enabled - Use on-screen controls!", 3)
     else
         Window:Notify("Fly", "Disabled", 2)
     end
 end)
 
-PlayerSection:NewSlider("Fly Speed", 10, 200, state.flySpeed, function(val)
-    state.flySpeed = val
+PlayerSection:NewSlider("Fly Speed", 10, 200, playerState.flySpeed, function(val)
+    playerState.flySpeed = val
+    if playerState.flyEnabled then
+        Window:Notify("Fly Speed", "Set to " .. val, 1)
+    end
 end)
 
-PlayerSection:NewLabel("📱 Fly uses on-screen buttons!")
+PlayerSection:NewLabel("📱 Fly shows on-screen buttons!")
+PlayerSection:NewLabel("📌 Touch buttons to move while flying")
 
 ----------------------------------------------------------------
 -- SETTINGS TAB
 ----------------------------------------------------------------
-local SettingsTab = Window:NewTab("Settings")
+local SettingsTab = Window:NewTab("⚙️ Settings")
 
 local InterfaceSection = SettingsTab:NewSection("Interface")
+
 InterfaceSection:NewDropdown("Select Theme", Window:GetThemeList(), function(theme)
     if theme then
         Window:SetTheme(theme)
@@ -980,33 +1004,39 @@ InterfaceSection:NewDropdown("Select Theme", Window:GetThemeList(), function(the
     end
 end)
 
-InterfaceSection:NewButton("Toggle UI", "Show/Hide UI", function()
+InterfaceSection:NewButton("Toggle UI Visibility", "Show/Hide UI", function()
     Window:ToggleUI()
 end)
 
-local PerfSection = SettingsTab:NewSection("Performance (Mobile)")
+InterfaceSection:NewLabel("📱 Tap to toggle UI on/off")
+
+local PerfSection = SettingsTab:NewSection("📱 Performance (Mobile)")
+
 local lighting = game:GetService("Lighting")
 local normalBrightness = lighting.Brightness
-local fullBrightEnabled = false
 
-PerfSection:NewToggle("Full Bright", "Max brightness", function(state)
-    fullBrightEnabled = state
+PerfSection:NewToggle("Full Bright", "Maximum brightness", function(state)
     if state then
         lighting.Brightness = 2
         lighting.ClockTime = 12
         lighting.FogEnd = 1e6
+        lighting.Ambient = Color3.fromRGB(255, 255, 255)
         Window:Notify("Full Bright", "Enabled", 2)
     else
         lighting.Brightness = normalBrightness
+        lighting.ClockTime = 14
+        lighting.Ambient = Color3.fromRGB(0, 0, 0)
         Window:Notify("Full Bright", "Disabled", 2)
     end
 end)
 
 local fpsBoosterEnabled = false
-PerfSection:NewToggle("FPS Booster", "Lower graphics for performance", function(state)
+PerfSection:NewToggle("FPS Booster", "Max performance mode", function(state)
     fpsBoosterEnabled = state
     if fpsBoosterEnabled then
-        -- Low-detail settings for mobile
+        -- Aggressive mobile optimization
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        
         for _, v in ipairs(workspace:GetDescendants()) do
             if v:IsA("BasePart") then
                 v.Material = Enum.Material.SmoothPlastic
@@ -1018,17 +1048,22 @@ PerfSection:NewToggle("FPS Booster", "Lower graphics for performance", function(
                 v.Enabled = false
             elseif v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
                 v.Enabled = false
+            elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+                v.Enabled = false
             end
         end
+        
         lighting.GlobalShadows = false
         lighting.FogEnd = 9e9
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
-        Window:Notify("FPS Booster", "Enabled - Mobile optimized", 2)
+        lighting.Brightness = 2
+        
+        Window:Notify("FPS Booster", "Enabled - Max performance!", 2)
     else
         -- Restore
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        
         for _, v in ipairs(workspace:GetDescendants()) do
             if v:IsA("BasePart") then
-                v.Material = Enum.Material.Plastic
                 v.CastShadow = true
             elseif v:IsA("Decal") or v:IsA("Texture") then
                 v.Transparency = 0
@@ -1036,30 +1071,48 @@ PerfSection:NewToggle("FPS Booster", "Lower graphics for performance", function(
                 v.Enabled = true
             elseif v:IsA("Fire") or v:IsA("Smoke") or v:IsA("Sparkles") then
                 v.Enabled = true
+            elseif v:IsA("PointLight") or v:IsA("SpotLight") or v:IsA("SurfaceLight") then
+                v.Enabled = true
             end
         end
+        
         lighting.GlobalShadows = true
         lighting.FogEnd = 1000
         lighting.Brightness = normalBrightness
-        settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        
         Window:Notify("FPS Booster", "Disabled", 2)
     end
 end)
 
-PerfSection:NewLabel("📱 Recommended for mobile devices!")
+PerfSection:NewLabel("📱 HIGHLY RECOMMENDED for mobile!")
+PerfSection:NewLabel("⚡ Removes shadows, particles, lights")
+PerfSection:NewLabel("⚡ Sets graphics to lowest quality")
 
-local MobileSection = SettingsTab:NewSection("📱 Mobile Info")
-MobileSection:NewLabel("Device: " .. (isMobile and "Mobile" or "Desktop"))
-MobileSection:NewLabel("Touch Enabled: " .. tostring(UserInputService.TouchEnabled))
-MobileSection:NewLabel("────────────────────────────")
-MobileSection:NewLabel("Tips:")
-MobileSection:NewLabel("• Aimlock: Hold screen to activate")
-MobileSection:NewLabel("• Fly: Use on-screen buttons")
-MobileSection:NewLabel("• Enable FPS Booster for better performance")
-MobileSection:NewLabel("• Silent Aim works automatically")
+local MobileInfoSection = SettingsTab:NewSection("📱 Mobile Information")
+MobileInfoSection:NewLabel("Platform: MOBILE ONLY")
+MobileInfoSection:NewLabel("Touch Enabled: ✓ YES")
+MobileInfoSection:NewLabel("Optimized: ✓ YES")
+MobileInfoSection:NewLabel("────────────────────────────")
+MobileInfoSection:NewLabel("📌 Touch Controls Guide:")
+MobileInfoSection:NewLabel("• Auto Aim: Automatically aims when shooting")
+MobileInfoSection:NewLabel("• Touch Aimlock: Hold screen to lock aim")
+MobileInfoSection:NewLabel("• Fly Mode: Uses on-screen buttons (W/A/S/D/▲/▼)")
+MobileInfoSection:NewLabel("• All features work via touch!")
+MobileInfoSection:NewLabel("────────────────────────────")
+
+local TipsSection = SettingsTab:NewSection("💡 Mobile Tips")
+TipsSection:NewLabel("✓ Enable FPS Booster for smooth gameplay")
+TipsSection:NewLabel("✓ Use Auto Aim instead of Touch Aimlock for easier aim")
+TipsSection:NewLabel("✓ Auto Farm works fully automatically")
+TipsSection:NewLabel("✓ TP to Enemy includes auto-shoot")
+TipsSection:NewLabel("✓ Fly mode: Touch buttons to control direction")
+TipsSection:NewLabel("✓ Never use in Duels - instant ban!")
 
 ----------------------------------------------------------------
 -- BOOT MESSAGE
 ----------------------------------------------------------------
-Window:Notify("Kour6anHub Mobile", "Hypershot Script Loaded", 4)
-Window:Notify("Mobile Optimized", "Touch controls enabled!", 3)
+Window:Notify("🎮 Kour6anHub Mobile", "Hypershot Script Loaded!", 4)
+task.wait(1)
+Window:Notify("📱 Touch Controls", "All features optimized for mobile!", 3)
+task.wait(1)
+Window:Notify("⚡ Pro Tip", "Enable FPS Booster for best performance!", 3)
