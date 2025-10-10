@@ -2023,7 +2023,6 @@ end,
     }
 end
 
--- Fixed Colorpicker implementation for Kour6anHub
 function SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local currentH, currentS, currentV = Color3.toHSV(currentColor)
