@@ -2023,6 +2023,448 @@ end,
     }
 end
 
+-- Add this function to your SectionObj (place it after NewDropdown)
+
+function SectionObj:NewMultiDropdown(name, options, callback)
+    -- Ensure options is a proper array of strings
+    options = options or {}
+    if type(options) ~= "table" then 
+        options = {} 
+    end
+    
+    -- Convert all options to strings and validate
+    local validOptions = {}
+    for i, opt in ipairs(options) do
+        if opt ~= nil then
+            validOptions[i] = tostring(opt)
+        end
+    end
+    options = validOptions
+    
+    local selected = {} -- Table to store multiple selections
+    local open = false
+    local optionsFrame = nil
+    local scrollFrame = nil
+    local optionButtons = {}
+
+    local wrap = Instance.new("Frame")
+    wrap.Size = UDim2.new(1, 0, 0, 34)
+    wrap.BackgroundTransparency = 1
+    wrap.Parent = Section
+
+    local btn = Instance.new("TextButton")
+    local function getDisplayText()
+        local count = 0
+        for _ in pairs(selected) do count = count + 1 end
+        if count == 0 then
+            return (name and name .. ": " or "") .. "None selected"
+        elseif count == 1 then
+            for k in pairs(selected) do
+                return (name and name .. ": " or "") .. tostring(k)
+            end
+        else
+            return (name and name .. ": " or "") .. count .. " selected"
+        end
+    end
+    
+    btn.Text = getDisplayText()
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+    btn.TextColor3 = theme.Text
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 13
+    btn.AutoButtonColor = false
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Parent = wrap
+
+    local btnCorner = Instance.new("UICorner")
+    btnCorner.CornerRadius = UDim.new(0, 6)
+    btnCorner.Parent = btn
+
+    local btnPadding = Instance.new("UIPadding")
+    btnPadding.PaddingLeft = UDim.new(0, 8)
+    btnPadding.PaddingRight = UDim.new(0, 28)
+    btnPadding.Parent = btn
+
+    -- Add dropdown arrow indicator
+    local arrow = Instance.new("TextLabel")
+    arrow.Text = getArrowChar("down")
+    arrow.Size = UDim2.new(0, 20, 1, 0)
+    arrow.Position = UDim2.new(1, -20, 0, 0)
+    arrow.BackgroundTransparency = 1
+    arrow.TextColor3 = theme.Text
+    arrow.Font = Enum.Font.Gotham
+    arrow.TextSize = 12
+    arrow.TextXAlignment = Enum.TextXAlignment.Center
+    arrow.Parent = btn
+
+    local function getMaxDropdownHeight()
+        local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+        return math.min(200, math.floor(viewport.Y * 0.3))
+    end
+    
+    local function closeOptions()
+        if optionsFrame and optionsFrame.Parent and optionsFrame.Visible then
+            arrow.Text = getArrowChar("down")
+            
+            local closeTween = tween(optionsFrame, {
+                Size = UDim2.new(1, 0, 0, 0),
+                BackgroundTransparency = 1
+            }, {duration = 0.12})
+            
+            if scrollFrame then
+                tween(scrollFrame, {ScrollBarImageTransparency = 1}, {duration = 0.08})
+            end
+            
+            for _, optBtn in pairs(optionButtons) do
+                if optBtn and optBtn.Parent then
+                    tween(optBtn, {BackgroundTransparency = 1, TextTransparency = 1}, {duration = 0.08})
+                end
+            end
+            
+            if closeTween then
+                local conn
+                conn = closeTween.Completed:Connect(function()
+                    pcall(function() conn:Disconnect() end)
+                    if optionsFrame then optionsFrame.Visible = false end
+                end)
+            else
+                task.wait(0.12)
+                if optionsFrame then optionsFrame.Visible = false end
+            end
+        end
+        open = false
+        wrap.Size = UDim2.new(1, 0, 0, 34)
+        
+        if Window._currentOpenDropdown == closeOptions then
+            Window._currentOpenDropdown = nil
+        end
+    end
+
+    local function createOptionsFrame()
+        if optionsFrame then
+            pcall(function() optionsFrame:Destroy() end)
+        end
+        
+        -- Create main options container
+        optionsFrame = Instance.new("Frame")
+        optionsFrame.Name = "_dropdownOptions"
+        optionsFrame.BackgroundColor3 = theme.SectionBackground
+        optionsFrame.BorderSizePixel = 0
+        optionsFrame.Position = UDim2.new(0, 0, 0, 36)
+        optionsFrame.Size = UDim2.new(1, 0, 0, 0)
+        optionsFrame.Visible = false
+        optionsFrame.ClipsDescendants = true
+        optionsFrame.ZIndex = 100
+        optionsFrame.Parent = wrap
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 6)
+        corner.Parent = optionsFrame
+
+        local border = Instance.new("UIStroke")
+        border.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
+        border.Thickness = 1
+        border.Transparency = 0.5
+        border.Parent = optionsFrame
+
+        -- Create ScrollingFrame for options
+        scrollFrame = Instance.new("ScrollingFrame")
+        scrollFrame.Name = "_optionsScroll"
+        scrollFrame.Size = UDim2.new(1, -4, 1, -4)
+        scrollFrame.Position = UDim2.new(0, 2, 0, 2)
+        scrollFrame.BackgroundTransparency = 1
+        scrollFrame.BorderSizePixel = 0
+        scrollFrame.ScrollBarThickness = 4
+        scrollFrame.ScrollBarImageColor3 = theme.Accent or Color3.fromRGB(100, 100, 100)
+        scrollFrame.ScrollBarImageTransparency = 0.3
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+        scrollFrame.ZIndex = 101
+        scrollFrame.Parent = optionsFrame
+
+        return optionsFrame, scrollFrame
+    end
+
+    local function openOptions()
+        if #options == 0 then
+            Window:Notify("Dropdown Error", "No options available", 2)
+            return
+        end
+
+        if Window._currentOpenDropdown and Window._currentOpenDropdown ~= closeOptions then
+            pcall(function() Window._currentOpenDropdown() end)
+        end
+
+        createOptionsFrame()
+        open = true
+        arrow.Text = getArrowChar("up")
+
+        optionButtons = {}
+
+        -- Calculate dimensions
+        local itemHeight = 28
+        local maxHeight = getMaxDropdownHeight()
+        local totalContentHeight = #options * itemHeight
+        local frameHeight = math.min(maxHeight, totalContentHeight)
+
+        -- Set canvas size for scrolling
+        scrollFrame.CanvasSize = UDim2.new(0, 0, 0, totalContentHeight)
+
+        -- Create option buttons with checkboxes
+        for i, opt in ipairs(options) do
+            local optBtn = Instance.new("TextButton")
+            optBtn.Size = UDim2.new(1, -8, 0, itemHeight - 2)
+            optBtn.Position = UDim2.new(0, 4, 0, (i-1) * itemHeight + 1)
+            optBtn.BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground
+            optBtn.Font = Enum.Font.Gotham
+            optBtn.TextSize = 12
+            optBtn.TextColor3 = theme.Text
+            optBtn.AutoButtonColor = false
+            optBtn.Text = "" -- We'll use a label for text
+            optBtn.BackgroundTransparency = 1
+            optBtn.TextTransparency = 1
+            optBtn.ZIndex = 102
+            optBtn.Parent = scrollFrame
+
+            local optCorner = Instance.new("UICorner")
+            optCorner.CornerRadius = UDim.new(0, 4)
+            optCorner.Parent = optBtn
+
+            -- Checkbox
+            local checkbox = Instance.new("Frame")
+            checkbox.Size = UDim2.new(0, 16, 0, 16)
+            checkbox.Position = UDim2.new(0, 8, 0.5, -8)
+            checkbox.BackgroundColor3 = theme.InputBackground or theme.SectionBackground
+            checkbox.BorderSizePixel = 0
+            checkbox.ZIndex = 103
+            checkbox.Parent = optBtn
+
+            local checkboxCorner = Instance.new("UICorner")
+            checkboxCorner.CornerRadius = UDim.new(0, 3)
+            checkboxCorner.Parent = checkbox
+
+            local checkboxStroke = Instance.new("UIStroke")
+            checkboxStroke.Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)
+            checkboxStroke.Thickness = 1
+            checkboxStroke.Parent = checkbox
+
+            -- Checkmark
+            local checkmark = Instance.new("TextLabel")
+            checkmark.Size = UDim2.new(1, 0, 1, 0)
+            checkmark.BackgroundTransparency = 1
+            checkmark.Text = "✓"
+            checkmark.TextColor3 = Color3.fromRGB(255, 255, 255)
+            checkmark.Font = Enum.Font.GothamBold
+            checkmark.TextSize = 14
+            checkmark.Visible = selected[tostring(opt)] or false
+            checkmark.ZIndex = 104
+            checkmark.Parent = checkbox
+
+            -- Option text
+            local optLabel = Instance.new("TextLabel")
+            optLabel.Size = UDim2.new(1, -32, 1, 0)
+            optLabel.Position = UDim2.new(0, 28, 0, 0)
+            optLabel.BackgroundTransparency = 1
+            optLabel.Text = tostring(opt)
+            optLabel.TextColor3 = theme.Text
+            optLabel.Font = Enum.Font.Gotham
+            optLabel.TextSize = 12
+            optLabel.TextXAlignment = Enum.TextXAlignment.Left
+            optLabel.ZIndex = 103
+            optLabel.Parent = optBtn
+
+            -- Set initial state
+            if selected[tostring(opt)] then
+                checkbox.BackgroundColor3 = theme.Accent
+                checkboxStroke.Color = theme.Accent
+            end
+
+            -- Hover effects
+            local hoverConn1 = optBtn.MouseEnter:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.ButtonHover or theme.TabBackground}, {duration = 0.08})
+            end)
+
+            local hoverConn2 = optBtn.MouseLeave:Connect(function()
+                tween(optBtn, {BackgroundColor3 = theme.ButtonBackground or theme.SectionBackground}, {duration = 0.08})
+            end)
+
+            -- Click to toggle selection
+            local clickConn = optBtn.MouseButton1Click:Connect(function()
+                local optString = tostring(opt)
+                
+                if selected[optString] then
+                    -- Deselect
+                    selected[optString] = nil
+                    checkmark.Visible = false
+                    tween(checkbox, {BackgroundColor3 = theme.InputBackground or theme.SectionBackground}, {duration = 0.1})
+                    tween(checkboxStroke, {Color = theme.TabBackground or Color3.fromRGB(100, 100, 100)}, {duration = 0.1})
+                else
+                    -- Select
+                    selected[optString] = true
+                    checkmark.Visible = true
+                    tween(checkbox, {BackgroundColor3 = theme.Accent}, {duration = 0.1})
+                    tween(checkboxStroke, {Color = theme.Accent}, {duration = 0.1})
+                end
+                
+                -- Update display text
+                btn.Text = getDisplayText()
+                
+                -- Call callback with current selections
+                if callback and type(callback) == "function" then
+                    local selectedList = {}
+                    for k in pairs(selected) do
+                        table.insert(selectedList, k)
+                    end
+                    safeCallback(callback, selectedList)
+                end
+            end)
+
+            optionButtons[i] = optBtn
+        end
+
+        -- Show and animate
+        optionsFrame.Visible = true
+        optionsFrame.BackgroundTransparency = 1
+        scrollFrame.ScrollBarImageTransparency = 1
+
+        tween(optionsFrame, {
+            Size = UDim2.new(1, 0, 0, frameHeight + 4),
+            BackgroundTransparency = 0
+        }, {duration = 0.15})
+
+        tween(scrollFrame, {ScrollBarImageTransparency = 0.3}, {duration = 0.15})
+
+        for i, optBtn in pairs(optionButtons) do
+            task.delay(i * 0.02, function()
+                if optBtn and optBtn.Parent then
+                    tween(optBtn, {
+                        BackgroundTransparency = 0,
+                        TextTransparency = 0
+                    }, {duration = 0.1})
+                end
+            end)
+        end
+
+        wrap.Size = UDim2.new(1, 0, 0, 34 + frameHeight + 6)
+        Window._currentOpenDropdown = closeOptions
+    end
+
+    btn.MouseButton1Click:Connect(function()
+        if open then
+            closeOptions()
+        else
+            openOptions()
+        end
+    end)
+
+    -- Outside click detection
+    local outsideClickConn
+    outsideClickConn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if gameProcessed or not open then return end
+        
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            local mouse = UserInputService:GetMouseLocation()
+            local wrapPos = wrap.AbsolutePosition
+            local wrapSize = wrap.AbsoluteSize
+            
+            if mouse.X < wrapPos.X or mouse.X > wrapPos.X + wrapSize.X or
+               mouse.Y < wrapPos.Y or mouse.Y > wrapPos.Y + wrapSize.Y then
+                closeOptions()
+            end
+        end
+    end)
+
+    globalConnTracker:add(outsideClickConn)
+
+    local ancestryConn
+    ancestryConn = wrap.AncestryChanged:Connect(function()
+        if not wrap.Parent then
+            pcall(function() 
+                outsideClickConn:Disconnect()
+                ancestryConn:Disconnect()
+            end)
+        end
+    end)
+    globalConnTracker:add(ancestryConn)
+
+    return {
+        Set = function(values)
+            -- Accepts a table of values to select
+            if type(values) ~= "table" then
+                values = {tostring(values)}
+            end
+            
+            selected = {}
+            for _, val in ipairs(values) do
+                local stringVal = tostring(val)
+                for _, opt in ipairs(options) do
+                    if tostring(opt) == stringVal then
+                        selected[stringVal] = true
+                        break
+                    end
+                end
+            end
+            
+            btn.Text = getDisplayText()
+            
+            if callback and type(callback) == "function" then
+                local selectedList = {}
+                for k in pairs(selected) do
+                    table.insert(selectedList, k)
+                end
+                safeCallback(callback, selectedList)
+            end
+        end,
+        
+        Get = function()
+            -- Returns table of selected values
+            local selectedList = {}
+            for k in pairs(selected) do
+                table.insert(selectedList, k)
+            end
+            return selectedList
+        end,
+        
+        Clear = function()
+            selected = {}
+            btn.Text = getDisplayText()
+            closeOptions()
+        end,
+        
+        SetOptions = function(newOptions)
+            newOptions = newOptions or {}
+            if type(newOptions) ~= "table" then
+                newOptions = {}
+            end
+            
+            local validNewOptions = {}
+            for i, opt in ipairs(newOptions) do
+                if opt ~= nil then
+                    validNewOptions[i] = tostring(opt)
+                end
+            end
+            options = validNewOptions
+            
+            -- Clear selections that are no longer valid
+            local newSelected = {}
+            for k in pairs(selected) do
+                for _, opt in ipairs(options) do
+                    if tostring(opt) == k then
+                        newSelected[k] = true
+                        break
+                    end
+                end
+            end
+            selected = newSelected
+            
+            btn.Text = getDisplayText()
+            closeOptions()
+        end,
+        
+        Close = closeOptions
+    }
+end
+
 function SectionObj:NewColorpicker(name, defaultColor, callback)
     local currentColor = typeof(defaultColor) == "Color3" and defaultColor or Color3.fromRGB(255, 255, 255)
     local currentH, currentS, currentV = Color3.toHSV(currentColor)
